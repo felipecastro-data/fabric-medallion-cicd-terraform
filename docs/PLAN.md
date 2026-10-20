@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 1 of 8 — 5%**
+**Progress: Step 1 of 8 — 9%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -18,6 +18,7 @@
 - [x] Public GitHub repo created
 - [x] Local tools: Homebrew, Terraform, Azure CLI, gh, uv, Java 17
 - [x] Repo skeleton committed
-- [ ] Entra app registration + GitHub OIDC federated credentials
+- [x] Entra app registration `sp-fabric-medallion-cicd` + GitHub OIDC federated credentials (main, PRs, dev/test/prod environments)
+- [x] Security group `sg-fabric-automation` (scopes Fabric tenant settings to the service principal)
 - [ ] Fabric tenant settings for service principals
 - [ ] HCP Terraform organization + workspaces
