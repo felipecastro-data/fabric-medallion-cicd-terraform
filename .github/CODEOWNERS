@@ -1,0 +1,6 @@
+# Default owner for everything in the repository
+*                    @felipecastro-data
+
+# Platform infrastructure and pipelines
+/infra/              @felipecastro-data
+/.github/workflows/  @felipecastro-data
