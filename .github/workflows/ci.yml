@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.1
       - run: uv sync --group dev --locked
       - run: uv run ruff check --output-format=github .
       - run: uv run ruff format --check .
@@ -33,7 +33,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.1
       - run: uv sync --group dev --locked
       - run: uv run pytest --junitxml=pytest-report.xml
       - uses: actions/upload-artifact@v7
