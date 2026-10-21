@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Lakehouse",
+    "displayName": "lh_bronze",
+    "description": "Bronze layer: raw, append-only Delta tables with ingestion metadata"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "41cecd98-7c4f-84e5-4378-615007124d79"
+  }
+}
