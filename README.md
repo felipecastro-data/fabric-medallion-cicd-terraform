@@ -58,6 +58,12 @@ flowchart LR
 |---|---|
 | ![Fabric workspace with medallion lakehouses](docs/screenshots/03-workspace-lakehouses.webp) | ![Fabric deployment pipeline Development → Test → Production](docs/screenshots/04-deployment-pipeline.webp) |
 
+### Quality gates
+
+| `ci` runs on every pull request (required to merge) | Review findings must be fixed and resolved before `main` accepts the merge |
+|---|---|
+| ![ci workflow: ruff, pytest, Fabric item validation](docs/screenshots/05-ci-checks.webp) | ![Pull request merged after resolving review findings](docs/screenshots/06-pr-review-gate.webp) |
+
 ## Repository layout
 
 ```
