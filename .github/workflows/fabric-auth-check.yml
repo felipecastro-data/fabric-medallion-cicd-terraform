@@ -1,0 +1,32 @@
+name: fabric-auth-check
+
+# Smoke test: GitHub OIDC -> Entra service principal -> Fabric REST API (no stored secrets)
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  auth-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: List capacities visible to the service principal
+        run: |
+          az rest --method get --resource https://api.fabric.microsoft.com \
+            --url https://api.fabric.microsoft.com/v1/capacities \
+            --query "value[].{name:displayName, sku:sku, state:state, region:region}" -o table
+
+      - name: List workspaces visible to the service principal
+        run: |
+          az rest --method get --resource https://api.fabric.microsoft.com \
+            --url https://api.fabric.microsoft.com/v1/workspaces \
+            --query "value[].{name:displayName, type:type}" -o table
