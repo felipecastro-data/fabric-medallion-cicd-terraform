@@ -1,6 +1,7 @@
 # Fabric Medallion Lakehouse — Terraform · CI/CD · Data Quality
 
-> 🚧 **Work in progress** — see [docs/PLAN.md](docs/PLAN.md) for live progress.
+> 🚧 **Work in progress** — see [docs/PLAN.md](docs/PLAN.md) for live progress and
+> [docs/development-workflow.md](docs/development-workflow.md) for the branching model.
 
 Production-grade data engineering project on **Microsoft Fabric**: a bronze / silver / gold lakehouse built on
 real Chicago **Divvy** bike-share trips enriched with **Open-Meteo** weather, provisioned with **Terraform**,

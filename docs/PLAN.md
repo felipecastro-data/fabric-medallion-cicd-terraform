@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 3 of 8 — 30%**
+**Progress: Step 3 of 8 — 35%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -40,5 +40,5 @@
 - [x] `divvy-medallion-dev` connected to GitHub (`main` / `fabric/`), initial sync committed by Fabric
 - [x] `ci` workflow: ruff lint + format, pytest, Fabric item validator (naming, logicalId, JSON), single `ci` gate check
 - [x] PR template + CODEOWNERS
-- [ ] `main` protected by a ruleset: PR required, `ci` check required, no force-push / deletion
-- [ ] Branch-workspace flow documented (feature branch → branch workspace → PR → main → Update dev from Git)
+- [x] `main` protected by ruleset `protect-main`: PR required (squash only), `ci` check required, no force-push / deletion, linear history
+- [x] Branch-workspace flow documented in [development-workflow.md](development-workflow.md)
