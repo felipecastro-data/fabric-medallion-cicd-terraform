@@ -38,3 +38,6 @@ terraform.rc
 .env
 *.pem
 data/
+
+# Local Terraform variable values (CI uses TF_VAR_* from GitHub variables)
+local.auto.tfvars
