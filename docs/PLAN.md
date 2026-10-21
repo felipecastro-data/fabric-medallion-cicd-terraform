@@ -1,12 +1,12 @@
 # Project plan & progress
 
-**Progress: Step 2 of 8 — 18%**
+**Progress: Step 3 of 8 — 25%**
 
 | # | Step | Status |
 |---|------|--------|
 | 1 | Foundations — repo, local tools, Entra app + GitHub OIDC, Fabric tenant settings, HCP Terraform | ✅ Done |
-| 2 | Terraform — dev/test/prod workspaces, lakehouses, environment, roles, deployment pipeline, TF CI | 🟡 In progress |
-| 3 | Git integration & branching — dev workspace ↔ `/fabric`, branch protection, PR template | ⬜ |
+| 2 | Terraform — dev/test/prod workspaces, lakehouses, environment, roles, deployment pipeline, TF CI | ✅ Done |
+| 3 | Git integration & branching — dev workspace ↔ `/fabric`, branch protection, PR template | 🟡 In progress |
 | 4 | Bronze — idempotent incremental ingestion (Divvy + Open-Meteo), watermark, metadata | ⬜ |
 | 5 | Silver — `src/` PySpark package as wheel, cleansing, dedup, quarantine, station dim | ⬜ |
 | 6 | Gold & data quality — star schema, aggregates, `dq_results`, pytest + chispa | ⬜ |
@@ -30,5 +30,7 @@
 - [x] Deployment pipeline Development → Test → Production with stage ↔ workspace assignment
 - [x] Local `terraform plan` against the trial capacity: 20 to add
 - [x] `terraform` workflow: fmt · validate · tflint · plan comment on PR · approval-gated apply on main
-- [ ] PR opened, plan reviewed, merged
-- [ ] Apply approved and green; workspaces visible in Fabric
+- [x] PR #1 opened, plan reviewed, merged
+- [x] Apply approved and green (20 resources); re-plan shows no drift
+- [x] Lakehouses paired by name across all pipeline stages ("Same as source")
+- [x] Workspace + pipeline IDs stored as GitHub repo variables for the CD workflow

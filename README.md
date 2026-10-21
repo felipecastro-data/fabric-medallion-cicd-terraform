@@ -45,6 +45,18 @@ flowchart LR
 | CI/CD | GitHub Actions (OIDC, no secrets), Fabric Git integration, Fabric Deployment Pipelines |
 | Testing | pytest, chispa, rules-based data-quality framework |
 
+## Screenshots
+
+### Infrastructure as Code
+
+| Terraform plan posted on every pull request | Apply gated by a manual approval |
+|---|---|
+| ![Terraform plan PR comment](docs/screenshots/01-terraform-pr-plan.webp) | ![Approval-gated terraform apply](docs/screenshots/02-terraform-apply-approval.webp) |
+
+| Workspaces and lakehouses created by the CI service principal | Deployment pipeline with lakehouses paired across stages |
+|---|---|
+| ![Fabric workspace with medallion lakehouses](docs/screenshots/03-workspace-lakehouses.webp) | ![Fabric deployment pipeline Development → Test → Production](docs/screenshots/04-deployment-pipeline.webp) |
+
 ## Repository layout
 
 ```
