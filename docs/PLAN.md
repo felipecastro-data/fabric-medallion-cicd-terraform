@@ -1,11 +1,11 @@
 # Project plan & progress
 
-**Progress: Step 1 of 8 — 11%**
+**Progress: Step 2 of 8 — 13%**
 
 | # | Step | Status |
 |---|------|--------|
-| 1 | Foundations — repo, local tools, Entra app + GitHub OIDC, Fabric tenant settings, HCP Terraform | 🟡 In progress |
-| 2 | Terraform — dev/test/prod workspaces, lakehouses, environment, roles, deployment pipeline, TF CI | ⬜ |
+| 1 | Foundations — repo, local tools, Entra app + GitHub OIDC, Fabric tenant settings, HCP Terraform | ✅ Done |
+| 2 | Terraform — dev/test/prod workspaces, lakehouses, environment, roles, deployment pipeline, TF CI | 🟡 In progress |
 | 3 | Git integration & branching — dev workspace ↔ `/fabric`, branch protection, PR template | ⬜ |
 | 4 | Bronze — idempotent incremental ingestion (Divvy + Open-Meteo), watermark, metadata | ⬜ |
 | 5 | Silver — `src/` PySpark package as wheel, cleansing, dedup, quarantine, station dim | ⬜ |
@@ -22,4 +22,4 @@
 - [x] Security group `sg-fabric-automation` (scopes Fabric tenant settings to the service principal)
 - [x] Fabric tenant settings for service principals + trial capacity contributor permissions
 - [x] OIDC smoke test green (`fabric-auth-check` workflow: SP sees the trial capacity)
-- [ ] HCP Terraform organization + workspaces
+- [x] HCP Terraform organization `felipecastro-data` (execution mode: Local, state only)
