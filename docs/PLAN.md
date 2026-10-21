@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 1 of 8 — 9%**
+**Progress: Step 1 of 8 — 11%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -20,5 +20,6 @@
 - [x] Repo skeleton committed
 - [x] Entra app registration `sp-fabric-medallion-cicd` + GitHub OIDC federated credentials (main, PRs, dev/test/prod environments)
 - [x] Security group `sg-fabric-automation` (scopes Fabric tenant settings to the service principal)
-- [ ] Fabric tenant settings for service principals
+- [x] Fabric tenant settings for service principals + trial capacity contributor permissions
+- [x] OIDC smoke test green (`fabric-auth-check` workflow: SP sees the trial capacity)
 - [ ] HCP Terraform organization + workspaces
