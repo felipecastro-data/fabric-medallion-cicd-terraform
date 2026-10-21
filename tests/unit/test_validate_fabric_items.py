@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from validate_fabric_items import validate
 
 
@@ -57,6 +58,41 @@ def test_invalid_json_is_reported(tmp_path):
     report = validate(tmp_path)
 
     assert any("invalid JSON" in e for e in report.errors)
+
+
+def test_items_in_nested_workspace_folders_are_validated(tmp_path):
+    folder = tmp_path / "bronze" / "ingestion"
+    folder.mkdir(parents=True)
+    (folder / "lh_raw.Lakehouse").mkdir()  # no .platform
+
+    report = validate(tmp_path)
+
+    assert report.items == 1
+    assert any("missing .platform" in e for e in report.errors)
+
+
+def test_duplicate_logical_ids_across_nested_folders_fail(tmp_path):
+    (tmp_path / "bronze").mkdir()
+    (tmp_path / "silver").mkdir()
+    _item(tmp_path / "bronze", "lh_bronze.Lakehouse", "Lakehouse", "lh_bronze", "same")
+    _item(tmp_path / "silver", "lh_silver.Lakehouse", "Lakehouse", "lh_silver", "same")
+
+    report = validate(tmp_path)
+
+    assert report.items == 2
+    assert any("duplicate logicalId" in e for e in report.errors)
+
+
+@pytest.mark.parametrize("content", ["null", "[]", '"text"', '{"metadata": null, "config": {}}'])
+def test_non_object_platform_is_rejected(tmp_path, content):
+    item = tmp_path / "lh_bronze.Lakehouse"
+    item.mkdir()
+    (item / ".platform").write_text(content)
+
+    report = validate(tmp_path)
+
+    assert not report.ok
+    assert any("must" in e and "JSON object" in e for e in report.errors)
 
 
 def test_repository_fabric_folder_is_valid():

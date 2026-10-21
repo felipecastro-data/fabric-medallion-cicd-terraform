@@ -1,7 +1,8 @@
 """Validate Fabric Git-integration item folders before they reach a workspace.
 
-Checks every ``<displayName>.<ItemType>`` folder under the Fabric root:
-  * ``.platform`` exists and is valid JSON
+Checks every ``<displayName>.<ItemType>`` folder under the Fabric root, including items nested in
+workspace folders:
+  * ``.platform`` exists and is a JSON object with ``metadata`` and ``config`` objects
   * folder name matches ``metadata.displayName`` and ``metadata.type``
   * ``config.logicalId`` is unique across items
   * display names follow the project naming convention per item type
@@ -13,8 +14,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 NAMING_PREFIXES: dict[str, str] = {
     "Lakehouse": "lh_",
@@ -37,19 +40,31 @@ class Report:
         return not self.errors
 
 
-def _load_json(path: Path, report: Report) -> dict | None:
+_INVALID = object()
+
+
+def _load_json(path: Path, report: Report) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         report.errors.append(f"{path}: invalid JSON ({exc})")
-        return None
+        return _INVALID
+
+
+def _discover_items(folder: Path) -> Iterator[Path]:
+    """Yield item folders, descending through workspace folders but stopping at item boundaries."""
+    for child in sorted(p for p in folder.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        if (child / ".platform").exists() or "." in child.name:
+            yield child
+        else:
+            yield from _discover_items(child)
 
 
 def validate(root: Path) -> Report:
     report = Report()
     logical_ids: dict[str, Path] = {}
 
-    for item_dir in sorted(p for p in root.iterdir() if p.is_dir() and "." in p.name):
+    for item_dir in _discover_items(root):
         report.items += 1
         name, _, item_type = item_dir.name.rpartition(".")
         platform_file = item_dir / ".platform"
@@ -59,10 +74,18 @@ def validate(root: Path) -> Report:
             continue
 
         platform = _load_json(platform_file, report)
-        if platform is None:
+        if platform is _INVALID:
+            continue
+        if not isinstance(platform, dict):
+            report.errors.append(f"{platform_file}: .platform must contain a JSON object")
             continue
 
-        metadata = platform.get("metadata", {})
+        metadata = platform.get("metadata")
+        config = platform.get("config")
+        if not isinstance(metadata, dict) or not isinstance(config, dict):
+            report.errors.append(f"{platform_file}: 'metadata' and 'config' must be JSON objects")
+            continue
+
         if metadata.get("type") != item_type:
             report.errors.append(f"{item_dir}: folder type '{item_type}' != metadata.type '{metadata.get('type')}'")
         if metadata.get("displayName") != name:
@@ -70,7 +93,7 @@ def validate(root: Path) -> Report:
                 f"{item_dir}: folder name '{name}' != metadata.displayName '{metadata.get('displayName')}'"
             )
 
-        logical_id = platform.get("config", {}).get("logicalId")
+        logical_id = config.get("logicalId")
         if not logical_id:
             report.errors.append(f"{item_dir}: missing config.logicalId")
         elif logical_id in logical_ids:
