@@ -1,13 +1,13 @@
 # Project plan & progress
 
-**Progress: Step 3 of 8 — 35%**
+**Progress: Step 4 of 8 — 38%**
 
 | # | Step | Status |
 |---|------|--------|
 | 1 | Foundations — repo, local tools, Entra app + GitHub OIDC, Fabric tenant settings, HCP Terraform | ✅ Done |
 | 2 | Terraform — dev/test/prod workspaces, lakehouses, environment, roles, deployment pipeline, TF CI | ✅ Done |
-| 3 | Git integration & branching — dev workspace ↔ `/fabric`, branch protection, PR template | 🟡 In progress |
-| 4 | Bronze — idempotent incremental ingestion (Divvy + Open-Meteo), watermark, metadata | ⬜ |
+| 3 | Git integration & branching — dev workspace ↔ `/fabric`, branch protection, PR template | ✅ Done |
+| 4 | Bronze — idempotent incremental ingestion (Divvy + Open-Meteo), watermark, metadata | 🟡 In progress |
 | 5 | Silver — `src/` PySpark package as wheel, cleansing, dedup, quarantine, station dim | ⬜ |
 | 6 | Gold & data quality — star schema, aggregates, `dq_results`, pytest + chispa | ⬜ |
 | 7 | Orchestration & CD — Data Pipeline, GitHub Actions CI/CD, Deployment Pipeline, approvals, smoke tests | ⬜ |
@@ -40,5 +40,6 @@
 - [x] `divvy-medallion-dev` connected to GitHub (`main` / `fabric/`), initial sync committed by Fabric
 - [x] `ci` workflow: ruff lint + format, pytest, Fabric item validator (naming, logicalId, JSON), single `ci` gate check
 - [x] PR template + CODEOWNERS
+- [x] PR #2: Copilot review found 2 validator gaps → fixed with regression tests before merge (conversation resolution enforced)
 - [x] `main` protected by ruleset `protect-main`: PR required (squash only), `ci` check required, no force-push / deletion, linear history
 - [x] Branch-workspace flow documented in [development-workflow.md](development-workflow.md)
