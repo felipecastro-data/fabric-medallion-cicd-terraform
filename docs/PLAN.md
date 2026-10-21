@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 3 of 8 — 25%**
+**Progress: Step 3 of 8 — 35%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -34,3 +34,11 @@
 - [x] Apply approved and green (20 resources); re-plan shows no drift
 - [x] Lakehouses paired by name across all pipeline stages ("Same as source")
 - [x] Workspace + pipeline IDs stored as GitHub repo variables for the CD workflow
+
+## Step 3 checklist
+
+- [x] `divvy-medallion-dev` connected to GitHub (`main` / `fabric/`), initial sync committed by Fabric
+- [x] `ci` workflow: ruff lint + format, pytest, Fabric item validator (naming, logicalId, JSON), single `ci` gate check
+- [x] PR template + CODEOWNERS
+- [x] `main` protected by ruleset `protect-main`: PR required (squash only), `ci` check required, no force-push / deletion, linear history
+- [x] Branch-workspace flow documented in [development-workflow.md](development-workflow.md)
