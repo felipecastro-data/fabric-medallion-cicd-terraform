@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 2 of 8 — 13%**
+**Progress: Step 2 of 8 — 18%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -23,3 +23,12 @@
 - [x] Fabric tenant settings for service principals + trial capacity contributor permissions
 - [x] OIDC smoke test green (`fabric-auth-check` workflow: SP sees the trial capacity)
 - [x] HCP Terraform organization `felipecastro-data` (execution mode: Local, state only)
+
+## Step 2 checklist
+
+- [x] Terraform root + reusable module `fabric_workspace_stack` (workspace, lakehouses, Spark settings, roles)
+- [x] Deployment pipeline Development → Test → Production with stage ↔ workspace assignment
+- [x] Local `terraform plan` against the trial capacity: 20 to add
+- [x] `terraform` workflow: fmt · validate · tflint · plan comment on PR · approval-gated apply on main
+- [ ] PR opened, plan reviewed, merged
+- [ ] Apply approved and green; workspaces visible in Fabric
