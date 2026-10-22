@@ -77,8 +77,11 @@ never dropped** — valid + quarantined always equals the Bronze row count:
 
 | Period | Bronze rows | Silver `trips` | `trips_quarantine` |
 |---|---:|---:|---:|
-| 2026-08 | 868,191 | 846,665 | 21,526 (2.5%) |
-| 2026-09 | 770,562 | 751,366 | 19,196 (2.5%) |
+| 2026-08 | 868,191 | 846,575 | 21,616 (2.5%) |
+| 2026-09 | 770,562 | 751,283 | 19,279 (2.5%) |
+
+Quarantine reasons (both months): `duration_under_60s` 39,521 · `missing_end_coordinates` 1,327 ·
+`duration_over_24h` 1,303 · `coordinates_out_of_range` 10 — 1,266 rows fail more than one rule.
 
 ![nb_silver_trips run summary](docs/screenshots/10-silver-trips-run.webp)
 

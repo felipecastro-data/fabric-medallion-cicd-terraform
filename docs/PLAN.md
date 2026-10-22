@@ -61,4 +61,5 @@
 - [x] Upstream watermark: a period is rebuilt only when Bronze has a newer successful batch (`processing_log`)
 - [x] Package 0.2.0, 61 tests; publish tool gains publish-only mode
 - [x] Feature-workspace run 202608–202609: valid + quarantined = Bronze rows exactly; 1,697 stations
+- [x] PR #5 review: duplicates quarantined, ms-precision durations, stations watermark; breaking type change handled with explicit `rebuild=True` (verified over OneLake)
 - [ ] PR merged; dev updated + `env_divvy` published
