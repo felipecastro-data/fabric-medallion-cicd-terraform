@@ -76,12 +76,14 @@ def succeeded_periods(spark: SparkSession, path: str, source: str) -> set[str]:
     return {r.period for r in rows.collect()}
 
 
-def _succeeded(spark: SparkSession, path: str, source: str) -> DataFrame | None:
+def _succeeded(spark: SparkSession, path: str, source: str, since: datetime | None = None) -> DataFrame | None:
+    """Successful runs of ``source``; with ``since``, only runs that finished after it (see ``record_rebuild``)."""
     try:
         log = spark.read.format("delta").load(path)
     except Exception:  # noqa: BLE001 - table not created yet
         return None
-    return log.filter((F.col("source") == source) & (F.col("status") == "SUCCEEDED"))
+    runs = log.filter((F.col("source") == source) & (F.col("status") == "SUCCEEDED"))
+    return runs if since is None else runs.filter(F.col("finished_at") > F.lit(since))
 
 
 def latest_succeeded_batches(spark: SparkSession, path: str, source: str) -> dict[str, str]:
@@ -93,9 +95,11 @@ def latest_succeeded_batches(spark: SparkSession, path: str, source: str) -> dic
     return {r.period: r.batch_id for r in latest.collect()}
 
 
-def processed_batches(spark: SparkSession, path: str, source: str) -> set[tuple[str, str]]:
+def processed_batches(
+    spark: SparkSession, path: str, source: str, since: datetime | None = None
+) -> set[tuple[str, str]]:
     """``(period, upstream batch_id)`` pairs a downstream step already processed successfully."""
-    runs = _succeeded(spark, path, source)
+    runs = _succeeded(spark, path, source, since)
     if runs is None:
         return set()
     return {(r.period, r.batch_id) for r in runs.select("period", "batch_id").distinct().collect()}
@@ -109,9 +113,15 @@ def periods_to_process(
     return available if force else [p for p in available if (p, upstream[p]) not in processed]
 
 
-def last_success(spark: SparkSession, path: str, source: str) -> datetime | None:
+def combine_watermarks(primary: dict[str, str], *others: dict[str, str]) -> dict[str, str]:
+    """Composite per-period watermark for a step with several inputs: periods come from ``primary``; the step
+    re-runs a period when any input got a newer batch (``-`` marks an input with no batch for that period)."""
+    return {p: "|".join([batch, *(o.get(p, "-") for o in others)]) for p, batch in primary.items()}
+
+
+def last_success(spark: SparkSession, path: str, source: str, since: datetime | None = None) -> datetime | None:
     """``finished_at`` of the most recent successful run of ``source`` (None if it never succeeded)."""
-    runs = _succeeded(spark, path, source)
+    runs = _succeeded(spark, path, source, since)
     if runs is None:
         return None
     return runs.agg(F.max("finished_at").alias("t")).first().t
@@ -124,3 +134,32 @@ def needs_rebuild(upstream_last: datetime | None, dimension_last: datetime | Non
     even though every period is already up to date.
     """
     return upstream_last is not None and (dimension_last is None or dimension_last < upstream_last)
+
+
+def last_success_by_period(
+    spark: SparkSession, path: str, source: str, since: datetime | None = None
+) -> dict[str, datetime]:
+    """Period -> ``finished_at`` of the most recent successful run of ``source``."""
+    runs = _succeeded(spark, path, source, since)
+    if runs is None:
+        return {}
+    return {r.period: r.t for r in runs.groupBy("period").agg(F.max("finished_at").alias("t")).collect()}
+
+
+REBUILD_SUFFIX = "#rebuild"
+
+
+def record_rebuild(spark: SparkSession, path: str, source: str, reason: str = "rebuild=True") -> datetime:
+    """Persist a rebuild generation marker for ``source`` *before* its tables are dropped.
+
+    Checkpoints that finished before the marker no longer count (pass ``since=rebuilt_at(...)``), so a period
+    that fails mid-rebuild is retried instead of being skipped on the strength of a pre-rebuild success.
+    """
+    run = IngestionRun(source + REBUILD_SUFFIX, "ALL", reason).succeed(0)
+    append_runs(spark, path, [run])
+    return run.finished_at
+
+
+def rebuilt_at(spark: SparkSession, path: str, source: str) -> datetime | None:
+    """When ``source`` was last rebuilt (None if never); use as ``since`` for its checkpoints."""
+    return last_success(spark, path, source + REBUILD_SUFFIX)

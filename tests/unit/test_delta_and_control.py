@@ -89,3 +89,29 @@ def test_dimension_rebuild_follows_its_own_watermark(spark, tmp_path):
     append_runs(spark, path, [IngestionRun("silver.stations", "ALL", "x").succeed(1697)])
     assert needs_rebuild(trips_at, last_success(spark, path, "silver.stations")) is False
     assert needs_rebuild(datetime(2999, 1, 1), last_success(spark, path, "silver.stations")) is True  # newer trips
+
+
+def test_rebuild_marker_invalidates_earlier_checkpoints(spark, tmp_path):
+    from divvy_medallion.control import (
+        last_success_by_period,
+        periods_to_process,
+        processed_batches,
+        rebuilt_at,
+        record_rebuild,
+    )
+
+    path = str(tmp_path / "log")
+    append_runs(spark, path, [IngestionRun("gold.fact_trips", p, "b1").succeed(10) for p in ("202608", "202609")])
+    assert rebuilt_at(spark, path, "gold.fact_trips") is None
+
+    since = record_rebuild(spark, path, "gold.fact_trips")  # tables dropped after this point
+    assert rebuilt_at(spark, path, "gold.fact_trips") == since
+    assert processed_batches(spark, path, "gold.fact_trips", since) == set()
+
+    # 202608 reloads, then 202609 fails mid-rebuild: a plain retry must pick 202609 up again
+    append_runs(spark, path, [IngestionRun("gold.fact_trips", "202608", "b1").succeed(10)])
+    append_runs(spark, path, [IngestionRun("gold.fact_trips", "202609", "b1").fail(RuntimeError("boom"))])
+    upstream = {"202608": "b1", "202609": "b1"}
+    done = processed_batches(spark, path, "gold.fact_trips", since)
+    assert periods_to_process(upstream, done, ["202608", "202609"]) == ["202609"]
+    assert set(last_success_by_period(spark, path, "gold.fact_trips", since)) == {"202608"}

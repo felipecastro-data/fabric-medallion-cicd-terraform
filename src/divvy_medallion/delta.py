@@ -16,3 +16,8 @@ def overwrite_partition(df: DataFrame, path: str, partition_column: str, value: 
         .partitionBy(partition_column)
         .save(path)
     )
+
+
+def overwrite_table(df: DataFrame, path: str) -> None:
+    """Full rebuild of a small derived table (dimensions); the schema follows the code."""
+    df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(path)
