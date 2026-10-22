@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 6 of 8 — 70%**
+**Progress: Step 6 of 8 — 78%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -72,6 +72,8 @@
 - [x] Incremental: a period is rebuilt when Silver trips *or* weather has a newer batch (composite watermark)
 - [x] DQ rules in code (not_null, unique, accepted_values, range, FK, reconciliation, ratio, freshness) with `error`/`warn` severity
 - [x] `nb_dq_checks` appends to `dq_results` and fails on any `error` check (pipeline gate for Step 7)
-- [x] Package 0.3.0, 96 tests (end-to-end Bronze -> Gold fixture checked by the DQ suite)
-- [ ] Feature-workspace run 202608–202609: Bronze -> Silver -> Gold -> DQ, verified over OneLake
+- [x] Package 0.3.1, 99 tests (end-to-end Bronze -> Gold fixture checked by the DQ suite)
+- [x] Feature-workspace run 202608–202609 verified over OneLake: fact = Silver exactly; 35/35 error checks pass
+- [x] Found in Fabric: monthly files overlap at the boundary (143 + 43 trips) → aggregates keyed by trip month,
+      rebuilt from files M and M+1, new aggregate-grain checks (a split day now blocks the pipeline)
 - [ ] PR merged; dev updated + `env_divvy` published

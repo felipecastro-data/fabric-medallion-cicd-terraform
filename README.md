@@ -85,6 +85,23 @@ Quarantine reasons (both months): `duration_under_60s` 39,521 · `missing_end_co
 
 ![nb_silver_trips run summary](docs/screenshots/10-silver-trips-run.webp)
 
+### Gold layer & data-quality gate
+
+Star schema in `lh_gold` (`fact_trips`, `dim_date`, `dim_station`, `dim_weather`) plus `agg_daily_kpis` and
+`agg_station_monthly`. `nb_dq_checks` runs **45 checks** per run (keys, uniqueness, accepted values, ranges,
+referential integrity, Bronze→Silver→Gold→aggregate reconciliation, quarantine rate, freshness), appends them to
+`dq_results` and **fails the pipeline on any `error` check**.
+
+The gate earned its keep on real data: Divvy's monthly files overlap at the boundary (the September file holds 43
+trips from 31 August), which split one day into two aggregate rows. Aggregates are now keyed by the trip's own month
+and an aggregate-grain check blocks any regression:
+
+| Trip month | Trips in `fact_trips` | `agg_daily_kpis` rows | Reconciled |
+|---|---:|---:|---|
+| 2026-07 (boundary spill-over) | 143 | 2 | ✅ |
+| 2026-08 | 846,475 | 62 (31 days × 2 rider types) | ✅ |
+| 2026-09 | 751,240 | 60 (30 days × 2 rider types) | ✅ |
+
 ## Repository layout
 
 ```
