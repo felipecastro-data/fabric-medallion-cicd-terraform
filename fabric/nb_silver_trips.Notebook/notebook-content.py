@@ -17,11 +17,13 @@
 # - Deduplicates on `ride_id` (latest ingestion wins) into `dbo.trips`, partitioned by `_period`
 # - Rebuilds the `dbo.stations` dimension from all Silver trips
 # - **Incremental:** a period is rebuilt only when Bronze has a newer successful batch for it (watermark in `dbo.processing_log`)
+# - **Breaking schema change:** run once with `rebuild=True` and `periods` covering every loaded month (drops and reloads `trips` + `trips_quarantine`)
 
 # PARAMETERS CELL ********************
 
 periods = "last:12"  # YYYYMM | YYYYMM-YYYYMM | last:N | comma-separated
 force = False        # True = rebuild periods even if their latest Bronze batch was already processed
+rebuild = False      # True = DROP trips + trips_quarantine first (breaking schema change); implies force
 
 # METADATA ********************
 
@@ -65,6 +67,15 @@ silver = lakehouse.resolve("lh_silver")
 log_path = silver.table("processing_log")
 
 force = str(force).strip().lower() in ("true", "1", "yes")
+rebuild = str(rebuild).strip().lower() in ("true", "1", "yes")
+if rebuild:  # explicit, logged migration path; partial overwrites never change column types silently
+    import notebookutils
+
+    for table in (trips.SILVER_TABLE, trips.QUARANTINE_TABLE):
+        if notebookutils.fs.exists(silver.table(table)):
+            notebookutils.fs.rm(silver.table(table), True)
+            print(f"rebuild: dropped {table}")
+    force = True
 upstream = latest_succeeded_batches(spark, bronze.table("ingestion_log"), divvy.SOURCE)  # watermark per period
 requested = parse_periods(periods)
 todo = periods_to_process(upstream, processed_batches(spark, log_path, SOURCE), requested, force)

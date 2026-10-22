@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 NOTEBOOKS = sorted((Path(__file__).resolve().parents[2] / "fabric").glob("*.Notebook/notebook-content.py"))
-EXPECTED_DEFAULTS = {"periods": '"last:12"', "force": "False", "batch_id": '""'}
+EXPECTED_DEFAULTS = {"periods": '"last:12"', "force": "False", "rebuild": "False", "batch_id": '""'}
 
 
 def _parameters(source: str) -> dict[str, str]:
