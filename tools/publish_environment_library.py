@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         "wheel",
         type=Path,
         nargs="?",
-        help="wheel to upload; omit to publish what is already staged (e.g. after 'Update from Git', which only stages)",
+        help="wheel to upload; omit to publish what is already staged ('Update from Git' only stages)",
     )
     parser.add_argument("--workspace-id", required=True)
     parser.add_argument("--environment", default="env_divvy")

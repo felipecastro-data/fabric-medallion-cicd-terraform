@@ -19,6 +19,9 @@ flowchart LR
 2. Build and test in the feature workspace; **commit** from Fabric to the feature branch.
 3. Open a pull request on GitHub. `ci` validates item naming, `logicalId`s and JSON; reviewers see the item diff.
 4. Squash-merge. `divvy-medallion-dev` is updated from Git (Source control → Updates; automated by the CD workflow).
+   **Environments are only staged by Git** — publish `env_divvy` afterwards
+   (`python tools/publish_environment_library.py --workspace-id <id>`, or Publish in the UI).
+   This also applies right after *Branch out*.
 5. The deployment pipeline promotes Development → Test → Production.
 6. Delete the feature workspace and branch.
 
