@@ -40,3 +40,52 @@ def test_ingestion_log_tracks_successful_periods(spark, tmp_path):
     assert succeeded_periods(spark, path, "divvy_trips") == {"202608"}
     failed = spark.read.format("delta").load(path).filter("status = 'FAILED'").first()
     assert failed.error == "RuntimeError: download failed"
+
+
+def test_latest_succeeded_batches_and_processed_pairs(spark, tmp_path):
+    import time
+
+    from divvy_medallion.control import latest_succeeded_batches, processed_batches
+
+    path = str(tmp_path / "log")
+    append_runs(spark, path, [IngestionRun("divvy_trips", "202609", "b1").succeed(10)])
+    time.sleep(0.01)
+    append_runs(spark, path, [IngestionRun("divvy_trips", "202609", "b2").succeed(11)])
+    append_runs(spark, path, [IngestionRun("divvy_trips", "202608", "b3").fail(RuntimeError("x"))])
+
+    assert latest_succeeded_batches(spark, path, "divvy_trips") == {"202609": "b2"}
+    assert processed_batches(spark, path, "divvy_trips") == {("202609", "b1"), ("202609", "b2")}
+
+
+def test_append_runs_evolves_logs_created_before_rows_rejected(spark, tmp_path):
+    path = str(tmp_path / "old_log")
+    old = spark.createDataFrame(
+        [("divvy_trips", "202609", "b1", "SUCCEEDED")], "source string, period string, batch_id string, status string"
+    )
+    old.write.format("delta").save(path)
+
+    append_runs(spark, path, [IngestionRun("silver.trips", "202609", "b1").succeed(9, rows_rejected=1)])
+
+    row = spark.read.format("delta").load(path).filter("source = 'silver.trips'").first()
+    assert (row.rows_written, row.rows_rejected) == (9, 1)
+
+
+def test_dimension_rebuild_follows_its_own_watermark(spark, tmp_path):
+    from datetime import datetime
+
+    from divvy_medallion.control import last_success, needs_rebuild
+
+    path = str(tmp_path / "log")
+    assert last_success(spark, path, "silver.trips") is None
+    assert needs_rebuild(None, None) is False  # nothing upstream yet
+
+    append_runs(spark, path, [IngestionRun("silver.trips", "202609", "b1").succeed(10)])
+    trips_at = last_success(spark, path, "silver.trips")
+    assert needs_rebuild(trips_at, None) is True  # never built
+
+    append_runs(spark, path, [IngestionRun("silver.stations", "ALL", "x").fail(RuntimeError("write failed"))])
+    assert needs_rebuild(trips_at, last_success(spark, path, "silver.stations")) is True  # failure -> retry rebuilds
+
+    append_runs(spark, path, [IngestionRun("silver.stations", "ALL", "x").succeed(1697)])
+    assert needs_rebuild(trips_at, last_success(spark, path, "silver.stations")) is False
+    assert needs_rebuild(datetime(2999, 1, 1), last_success(spark, path, "silver.stations")) is True  # newer trips
