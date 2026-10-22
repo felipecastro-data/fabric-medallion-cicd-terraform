@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "nb_bronze_divvy_trips"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "0d6af2e4-c922-4bf3-8288-65261de3e6b5"
+  }
+}

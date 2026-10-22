@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 4 of 8 — 38%**
+**Progress: Step 4 of 8 — 60%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -43,3 +43,12 @@
 - [x] PR #2: Copilot review found 2 validator gaps → fixed with regression tests before merge (conversation resolution enforced)
 - [x] `main` protected by ruleset `protect-main`: PR required (squash only), `ci` check required, no force-push / deletion, linear history
 - [x] Branch-workspace flow documented in [development-workflow.md](development-workflow.md)
+
+## Step 4 checklist
+
+- [x] Feature workspace `divvy-medallion-feat-bronze` via Branch out (`feat/bronze-ingestion`)
+- [x] `env_divvy` environment (Runtime 1.3) carrying the `divvy_medallion` wheel in Git; CI verifies wheel == `src/`
+- [x] Package: periods, lakehouse-by-name, idempotent `overwrite_partition`, `ingestion_log`, Divvy + Open-Meteo readers (37 tests)
+- [x] Notebooks `nb_bronze_divvy_trips`, `nb_bronze_weather_daily` (parameterised, no hard-coded IDs)
+- [x] Test run 202609 in the feature workspace: 770,562 trips (= source rows), 30 weather days
+- [ ] PR #4 merged; dev workspace updated from Git

@@ -1,0 +1,6 @@
+"ride_id","rideable_type","started_at","ended_at","start_station_name","start_station_id","end_station_name","end_station_id","start_lat","start_lng","end_lat","end_lng","member_casual"
+"B3C076B2D6BAC911","electric_bike","2026-09-01 19:28:37.087","2026-09-01 19:33:03.047",,,,,41.87,-87.67,41.87,-87.66,"member"
+"468834E54297FB3F","electric_bike","2026-09-24 20:38:01.486","2026-09-24 20:44:54.382",,,,,41.91,-87.7,41.9,-87.71,"member"
+"EEA7553DF439114F","classic_bike","2026-09-06 10:54:08.769","2026-09-06 11:24:40.634","California Ave & Milwaukee Ave","CHI00307","California Ave & Milwaukee Ave","CHI00307",41.922695,-87.697153,41.922695,-87.697153,"casual"
+"FDDEEFCEDC723159","classic_bike","2026-09-07 20:59:47.734","2026-09-08 21:59:26.761","California Ave & Division St","CHI00340",,,41.903029,-87.697474,,,"casual"
+"D76ACF574EE94E4E","classic_bike","2026-09-07 13:11:33.301","2026-09-07 13:28:16.640","Burling St & Diversey Pkwy","CHI00327","Clark St & Elm St","CHI00281",41.93314,-87.64776,41.90297,-87.6313,"casual"

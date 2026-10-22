@@ -1,0 +1,42 @@
+import pytest
+
+from divvy_medallion.control import IngestionRun, append_runs, succeeded_periods
+from divvy_medallion.delta import overwrite_partition
+
+
+def _df(spark, period, n):
+    return spark.createDataFrame([(f"id-{i}", period) for i in range(n)], "ride_id string, _period string")
+
+
+def test_overwrite_partition_is_idempotent(spark, tmp_path):
+    path = str(tmp_path / "trips")
+    overwrite_partition(_df(spark, "202608", 3), path, "_period", "202608")
+    overwrite_partition(_df(spark, "202609", 5), path, "_period", "202609")
+
+    # re-running a period replaces it: no duplicates, other periods untouched
+    overwrite_partition(_df(spark, "202609", 4), path, "_period", "202609")
+
+    counts = {r._period: r["count"] for r in spark.read.format("delta").load(path).groupBy("_period").count().collect()}
+    assert counts == {"202608": 3, "202609": 4}
+
+
+def test_overwrite_partition_rejects_rows_from_other_periods(spark, tmp_path):
+    mixed = _df(spark, "202608", 1).unionByName(_df(spark, "202609", 1))
+    with pytest.raises(ValueError, match="outside partition"):
+        overwrite_partition(mixed, str(tmp_path / "trips"), "_period", "202609")
+
+
+def test_ingestion_log_tracks_successful_periods(spark, tmp_path):
+    path = str(tmp_path / "ingestion_log")
+    assert succeeded_periods(spark, path, "divvy_trips") == set()
+
+    runs = [
+        IngestionRun("divvy_trips", "202608", "b-1").succeed(10, "202608.zip"),
+        IngestionRun("divvy_trips", "202609", "b-1").fail(RuntimeError("download failed")),
+        IngestionRun("weather_daily", "202609", "b-1").succeed(30),
+    ]
+    append_runs(spark, path, runs)
+
+    assert succeeded_periods(spark, path, "divvy_trips") == {"202608"}
+    failed = spark.read.format("delta").load(path).filter("status = 'FAILED'").first()
+    assert failed.error == "RuntimeError: download failed"
