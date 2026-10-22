@@ -58,6 +58,8 @@ from divvy_medallion.control import (
     needs_rebuild,
     periods_to_process,
     processed_batches,
+    rebuilt_at,
+    record_rebuild,
 )
 from divvy_medallion.delta import overwrite_partition, overwrite_table
 from divvy_medallion.gold import aggregates, dimensions, facts
@@ -79,18 +81,20 @@ rebuild = str(rebuild).strip().lower() in ("true", "1", "yes")
 if rebuild:  # explicit, logged migration path; partial overwrites never change column types silently
     import notebookutils
 
+    record_rebuild(spark, log_path, SOURCE)  # marker first: pre-rebuild checkpoints stop counting
     for table in (facts.FACT_TRIPS_TABLE, aggregates.DAILY_KPIS_TABLE, aggregates.STATION_MONTHLY_TABLE):
         if notebookutils.fs.exists(gold.table(table)):
             notebookutils.fs.rm(gold.table(table), True)
             print(f"rebuild: dropped {table}")
     force = True
+since = rebuilt_at(spark, log_path, SOURCE)  # checkpoints older than the last rebuild describe dropped data
 # a period depends on its Silver trips AND its weather (agg_daily_kpis joins the day's weather)
 upstream = combine_watermarks(
     latest_succeeded_batches(spark, silver_log, SILVER_TRIPS),
     latest_succeeded_batches(spark, silver_log, SILVER_WEATHER),
 )
 requested = parse_periods(periods)
-todo = periods_to_process(upstream, processed_batches(spark, log_path, SOURCE), requested, force)
+todo = periods_to_process(upstream, processed_batches(spark, log_path, SOURCE, since), requested, force)
 missing_upstream = [p for p in requested if p not in upstream]
 print(f"to_process={todo} up_to_date={sorted(set(requested) & set(upstream) - set(todo))} no_silver={missing_upstream}")
 
@@ -164,13 +168,17 @@ for period in todo:
 # Aggregates are keyed by the trip's own month: month M is rebuilt from the M and M+1 source files whenever
 # either was (re)loaded after M's last successful aggregation (own watermark -> a failed build is retried).
 AGG_SOURCE = "gold.aggregates"
-fact_loaded_at = last_success_by_period(spark, log_path, SOURCE)
-months = aggregates.months_to_refresh(fact_loaded_at, last_success_by_period(spark, log_path, AGG_SOURCE))
+fact_loaded_at = last_success_by_period(spark, log_path, SOURCE, since)
+months = aggregates.months_to_refresh(
+    fact_loaded_at,
+    last_success_by_period(spark, log_path, AGG_SOURCE, since),
+    dimensions_built_at=last_success(spark, log_path, "gold.dim_weather"),  # KPIs embed the day's weather
+)
 if months:
     fact_all, dim_weather = read(fact_path), read(gold.table(dimensions.DIM_WEATHER_TABLE))
 for month in months:
     fed_at = max(fact_loaded_at[p] for p in aggregates.source_periods(month) if p in fact_loaded_at)
-    run = IngestionRun(AGG_SOURCE, month, f"facts@{fed_at.isoformat()}")
+    run = IngestionRun(AGG_SOURCE, month, f"facts@{fed_at.isoformat()}")  # (weather tracked via its own log)
     try:
         month_fact = aggregates.month_facts(fact_all, month)
         overwrite_partition(aggregates.build_daily_kpis(month_fact, dim_weather),

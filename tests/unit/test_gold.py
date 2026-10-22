@@ -116,6 +116,9 @@ def test_months_to_refresh_follows_both_feeding_source_files():
     assert months_to_refresh(facts | {"202609": t(2026, 10, 4)}, done) == ["202608", "202609"]
     # a failed 202608 aggregate build (no newer success) is retried
     assert months_to_refresh(facts, done | {"202608": t(2026, 9, 30)}) == ["202608"]
+    # dim_weather rebuilt after the aggregates (e.g. July weather loaded later): every month refreshes
+    assert months_to_refresh(facts, done, dimensions_built_at=t(2026, 10, 5)) == ["202607", "202608", "202609"]
+    assert months_to_refresh(facts, done, dimensions_built_at=t(2026, 10, 2)) == []
 
 
 def test_boundary_day_is_one_row_even_when_split_across_source_files(spark, medallion):

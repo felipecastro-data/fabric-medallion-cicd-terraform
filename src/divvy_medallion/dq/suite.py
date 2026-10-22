@@ -134,6 +134,18 @@ def month_checks(t: Tables, month: str) -> list[Check]:
     ]  # fmt: skip
 
 
+def periods_in_scope(requested: list[str], t: Tables) -> list[str]:
+    """Requested periods loaded *anywhere* in the lineage (Bronze, Silver or Gold).
+
+    Scoping on Gold alone would hide a period that is entirely missing downstream; scoped this way its
+    reconciliation checks compare 0 Gold rows with the upstream count and fail.
+    """
+    loaded = set()
+    for df in (t.bronze_trips, t.silver_trips, t.fact_trips):
+        loaded |= {r[0] for r in df.select(PERIOD_COLUMN).distinct().collect()}
+    return [p for p in requested if p in loaded]
+
+
 def trip_months(fact_trips: DataFrame, periods: list[str]) -> list[str]:
     """Trip months present in the facts of ``periods`` (includes boundary spill-over months)."""
     rows = (

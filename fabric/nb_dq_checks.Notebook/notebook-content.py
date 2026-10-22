@@ -53,6 +53,7 @@ from divvy_medallion.dq.suite import (
     Tables,
     month_checks,
     period_checks,
+    periods_in_scope,
     results_frame,
     table_checks,
     trip_months,
@@ -79,8 +80,7 @@ tables = Tables(
     daily_kpis=read(gold.table(aggregates.DAILY_KPIS_TABLE)),
     station_monthly=read(gold.table(aggregates.STATION_MONTHLY_TABLE)),
 )
-loaded = {r[0] for r in tables.fact_trips.select(PERIOD_COLUMN).distinct().collect()}
-in_scope = [p for p in parse_periods(periods) if p in loaded]
+in_scope = periods_in_scope(parse_periods(periods), tables)  # loaded anywhere: a missing Gold period must fail
 now = datetime.now(UTC).replace(tzinfo=None)
 latest_bronze = max(latest_succeeded_batches(spark, bronze.table("ingestion_log"), divvy.SOURCE), default=None)
 checks = table_checks(

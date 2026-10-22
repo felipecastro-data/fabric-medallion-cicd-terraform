@@ -38,16 +38,24 @@ def month_facts(fact: DataFrame, month: str) -> DataFrame:
     return fact.filter(F.col(PERIOD_COLUMN).isin(source_periods(month)) & (trip_month(F.col("date_key")) == month))
 
 
-def months_to_refresh(fact_loaded_at: dict[str, datetime], aggregated_at: dict[str, datetime]) -> list[str]:
-    """Trip months whose aggregates are older than a fact load of any source file that feeds them.
+def months_to_refresh(
+    fact_loaded_at: dict[str, datetime],
+    aggregated_at: dict[str, datetime],
+    dimensions_built_at: datetime | None = None,
+) -> list[str]:
+    """Trip months whose aggregates are older than any of their inputs.
 
     ``fact_loaded_at``: source period -> last successful fact load; ``aggregated_at``: trip month -> last
-    successful aggregate build. Tracked per month, so a failed aggregate build is repaired by a plain retry.
+    successful aggregate build; ``dimensions_built_at``: last successful build of a dimension the aggregates
+    embed (``dim_weather``) — a newer one refreshes every month. Tracked per month, so a failed aggregate build
+    is repaired by a plain retry.
     """
     candidates = {m for p in fact_loaded_at for m in (p, add_months(p, -1))}
     stale = []
     for month in sorted(candidates):
         fed_at = max(fact_loaded_at[p] for p in source_periods(month) if p in fact_loaded_at)
+        if dimensions_built_at is not None:
+            fed_at = max(fed_at, dimensions_built_at)
         if month not in aggregated_at or aggregated_at[month] < fed_at:
             stale.append(month)
     return stale

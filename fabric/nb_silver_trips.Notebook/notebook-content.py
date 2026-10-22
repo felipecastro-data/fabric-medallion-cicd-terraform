@@ -56,6 +56,8 @@ from divvy_medallion.control import (
     needs_rebuild,
     periods_to_process,
     processed_batches,
+    rebuilt_at,
+    record_rebuild,
 )
 from divvy_medallion.delta import overwrite_partition
 from divvy_medallion.periods import parse_periods
@@ -71,6 +73,7 @@ rebuild = str(rebuild).strip().lower() in ("true", "1", "yes")
 if rebuild:  # explicit, logged migration path; partial overwrites never change column types silently
     import notebookutils
 
+    record_rebuild(spark, log_path, SOURCE)  # marker first: pre-rebuild checkpoints stop counting
     for table in (trips.SILVER_TABLE, trips.QUARANTINE_TABLE):
         if notebookutils.fs.exists(silver.table(table)):
             notebookutils.fs.rm(silver.table(table), True)
@@ -78,7 +81,8 @@ if rebuild:  # explicit, logged migration path; partial overwrites never change 
     force = True
 upstream = latest_succeeded_batches(spark, bronze.table("ingestion_log"), divvy.SOURCE)  # watermark per period
 requested = parse_periods(periods)
-todo = periods_to_process(upstream, processed_batches(spark, log_path, SOURCE), requested, force)
+since = rebuilt_at(spark, log_path, SOURCE)  # checkpoints older than the last rebuild describe dropped data
+todo = periods_to_process(upstream, processed_batches(spark, log_path, SOURCE, since), requested, force)
 missing_upstream = [p for p in requested if p not in upstream]
 print(f"to_process={todo} up_to_date={sorted(set(requested) & set(upstream) - set(todo))} no_bronze={missing_upstream}")
 

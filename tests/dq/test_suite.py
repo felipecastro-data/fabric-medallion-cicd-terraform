@@ -57,3 +57,15 @@ def test_a_day_split_across_source_files_fails_the_aggregate_grain_check(medalli
     blocking = {r.check for r in blocking_failures(_run(broken))}
 
     assert "agg_daily_kpis.unique_grain" in blocking
+
+
+def test_a_period_missing_entirely_from_gold_is_still_checked_and_blocks(medallion):
+    from divvy_medallion.dq.suite import periods_in_scope
+
+    no_gold = replace(medallion, fact_trips=medallion.fact_trips.filter("_period != '202609'"))
+    scope = periods_in_scope(["202609"], no_gold)
+    assert scope == ["202609"]  # Bronze/Silver have it, so it stays in scope
+
+    checks = [*period_checks(no_gold, "202609")]
+    blocking = {r.check for r in blocking_failures(run_checks(checks))}
+    assert "reconcile.silver_to_fact" in blocking
