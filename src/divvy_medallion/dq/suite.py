@@ -1,8 +1,9 @@
 """The project's data-quality suite over Bronze -> Silver -> Gold.
 
-Per-period checks run for each requested period loaded in ``fact_trips``; table-wide checks run once
-(period ``ALL``). ``error`` checks guard correctness (keys, reconciliation, referential integrity) and block
-the pipeline; ``warn`` checks flag drift worth a look (outliers, quarantine rate, freshness).
+Per-period checks run for each requested source period loaded in ``fact_trips``; aggregate reconciliation
+runs per *trip month* (``month_checks``); table-wide checks run once (period ``ALL``). ``error`` checks guard
+correctness (keys, reconciliation, referential integrity) and block the pipeline; ``warn`` checks flag drift
+worth a look (outliers, quarantine rate, freshness).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from divvy_medallion.bronze import PERIOD_COLUMN
 from divvy_medallion.dq import rules
 from divvy_medallion.dq.rules import ERROR, WARN, Check, CheckResult
 from divvy_medallion.gold import DOCKLESS_STATION_KEY
+from divvy_medallion.gold.aggregates import TRIP_MONTH_COLUMN, month_facts, trip_month
 from divvy_medallion.periods import add_months
 from divvy_medallion.silver.trips import MAX_DURATION_S, MEMBER_TYPES, MIN_DURATION_S, RIDEABLE_TYPES
 
@@ -63,6 +65,11 @@ def table_checks(t: Tables, *, latest_bronze_period: str | None, gold_built_at: 
         Check("dim_station.dockless_member", "dim_station", "row_count",
               lambda: rules.row_count(t.dim_station.filter(F.col("station_key") == DOCKLESS_STATION_KEY), 1)),
         Check("dim_weather.unique_date_key", "dim_weather", "unique", lambda: rules.unique(t.dim_weather, "date_key")),
+        # aggregate grain: a boundary day must not be split across source files (one row per day x member type)
+        Check("agg_daily_kpis.unique_grain", "agg_daily_kpis", "unique",
+              lambda: rules.unique(t.daily_kpis, "date_key", "member_type")),
+        Check("agg_station_monthly.unique_grain", "agg_station_monthly", "unique",
+              lambda: rules.unique(t.station_monthly, TRIP_MONTH_COLUMN, "station_key")),
         Check("dim_weather.temperature_plausible", "dim_weather", "in_range",
               lambda: rules.in_range(t.dim_weather, "temperature_2m_mean", -35.0, 45.0), WARN),
         # a ride re-published in a later month's file would be double counted across periods
@@ -106,16 +113,36 @@ def period_checks(t: Tables, period: str) -> list[Check]:
               lambda: rules.reconcile(silver.count() + quarantine.count(), bronze.count(), "valid+quarantine")),
         check("reconcile.silver_to_fact", "fact_trips", "reconcile",
               lambda: rules.reconcile(fact.count(), silver.count(), "fact vs silver")),
-        check("reconcile.fact_to_daily_kpis", "agg_daily_kpis", "reconcile",
-              lambda: rules.reconcile(_sum(_p(t.daily_kpis, period), "trips"), fact.count(), "kpis vs fact")),
-        check("reconcile.fact_to_station_monthly", "agg_station_monthly", "reconcile",
-              lambda: rules.reconcile(_sum(_p(t.station_monthly, period), "trips_started"), fact.count(),
-                                      "station starts vs fact")),
         check("silver.quarantine_rate_warn", "trips_quarantine", "max_ratio",
               lambda: rules.max_ratio(quarantine.count(), bronze.count(), QUARANTINE_WARN_RATE), WARN),
         check("silver.quarantine_rate_max", "trips_quarantine", "max_ratio",
               lambda: rules.max_ratio(quarantine.count(), bronze.count(), QUARANTINE_MAX_RATE)),
     ]  # fmt: skip
+
+
+def month_checks(t: Tables, month: str) -> list[Check]:
+    """Aggregates are keyed by the trip's own month and fed by two source files; reconcile them per month."""
+    fact = month_facts(t.fact_trips, month)
+    kpis = t.daily_kpis.filter(F.col(TRIP_MONTH_COLUMN) == month)
+    stations = t.station_monthly.filter(F.col(TRIP_MONTH_COLUMN) == month)
+    return [
+        Check("reconcile.fact_to_daily_kpis", "agg_daily_kpis", "reconcile",
+              lambda: rules.reconcile(_sum(kpis, "trips"), fact.count(), "kpis vs fact"), ERROR, month),
+        Check("reconcile.fact_to_station_monthly", "agg_station_monthly", "reconcile",
+              lambda: rules.reconcile(_sum(stations, "trips_started"), fact.count(), "station starts vs fact"),
+              ERROR, month),
+    ]  # fmt: skip
+
+
+def trip_months(fact_trips: DataFrame, periods: list[str]) -> list[str]:
+    """Trip months present in the facts of ``periods`` (includes boundary spill-over months)."""
+    rows = (
+        fact_trips.filter(F.col(PERIOD_COLUMN).isin(periods))
+        .select(trip_month(F.col("date_key")).alias("m"))
+        .distinct()
+        .collect()
+    )
+    return sorted(r.m for r in rows)
 
 
 DQ_RESULTS_SCHEMA = StructType(

@@ -130,3 +130,11 @@ def needs_rebuild(upstream_last: datetime | None, dimension_last: datetime | Non
     even though every period is already up to date.
     """
     return upstream_last is not None and (dimension_last is None or dimension_last < upstream_last)
+
+
+def last_success_by_period(spark: SparkSession, path: str, source: str) -> dict[str, datetime]:
+    """Period -> ``finished_at`` of the most recent successful run of ``source``."""
+    runs = _succeeded(spark, path, source)
+    if runs is None:
+        return {}
+    return {r.period: r.t for r in runs.groupBy("period").agg(F.max("finished_at").alias("t")).collect()}

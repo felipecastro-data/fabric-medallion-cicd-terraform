@@ -48,7 +48,15 @@ from divvy_medallion import lakehouse
 from divvy_medallion.bronze import PERIOD_COLUMN, divvy
 from divvy_medallion.control import last_success, latest_succeeded_batches
 from divvy_medallion.dq.rules import blocking_failures, run_checks
-from divvy_medallion.dq.suite import DQ_RESULTS_TABLE, Tables, period_checks, results_frame, table_checks
+from divvy_medallion.dq.suite import (
+    DQ_RESULTS_TABLE,
+    Tables,
+    month_checks,
+    period_checks,
+    results_frame,
+    table_checks,
+    trip_months,
+)
 from divvy_medallion.gold import aggregates, dimensions, facts
 from divvy_medallion.periods import parse_periods
 from divvy_medallion.silver import trips
@@ -84,7 +92,10 @@ checks = table_checks(
 )
 for period in in_scope:
     checks += period_checks(tables, period)
-print(f"periods_in_scope={in_scope} checks={len(checks)}")
+months_in_scope = trip_months(tables.fact_trips, in_scope)  # includes boundary spill-over months
+for month in months_in_scope:
+    checks += month_checks(tables, month)
+print(f"periods_in_scope={in_scope} trip_months={months_in_scope} checks={len(checks)}")
 
 # METADATA ********************
 

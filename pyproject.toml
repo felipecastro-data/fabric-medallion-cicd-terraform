@@ -1,6 +1,6 @@
 [project]
 name = "divvy-medallion"
-version = "0.3.0"
+version = "0.3.1"
 description = "PySpark transformations and data-quality rules for the Divvy medallion lakehouse on Microsoft Fabric"
 license = "MIT"
 requires-python = ">=3.11,<3.12"  # matches Fabric Runtime 1.3 (Spark 3.5, Python 3.11)

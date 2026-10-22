@@ -99,3 +99,39 @@ def test_combined_watermark_reprocesses_a_period_when_any_input_changes():
     assert periods_to_process(combined, processed, ["202608", "202609"]) == []
     weather_reloaded = combine_watermarks(trips, {"202608": "w1", "202609": "w2"})
     assert periods_to_process(weather_reloaded, processed, ["202608", "202609"]) == ["202609"]
+
+
+def test_months_to_refresh_follows_both_feeding_source_files():
+    from datetime import datetime
+
+    from divvy_medallion.gold.aggregates import months_to_refresh
+
+    t = datetime
+    facts = {"202608": t(2026, 10, 1), "202609": t(2026, 10, 2)}
+    # nothing aggregated yet: both file months plus the spill-over month before the first file
+    assert months_to_refresh(facts, {}) == ["202607", "202608", "202609"]
+    done = {"202607": t(2026, 10, 3), "202608": t(2026, 10, 3), "202609": t(2026, 10, 3)}
+    assert months_to_refresh(facts, done) == []
+    # reloading the 202609 file refreshes 202609 AND 202608 (its 2026-08-31 trips), not 202607
+    assert months_to_refresh(facts | {"202609": t(2026, 10, 4)}, done) == ["202608", "202609"]
+    # a failed 202608 aggregate build (no newer success) is retried
+    assert months_to_refresh(facts, done | {"202608": t(2026, 9, 30)}) == ["202608"]
+
+
+def test_boundary_day_is_one_row_even_when_split_across_source_files(spark, medallion):
+    from divvy_medallion.gold import aggregates
+
+    # the same day's trips arriving in two source files (2026-09-01 in both "202609" and "202610")
+    late = medallion.fact_trips.filter("date_key = 20260901").withColumn("_period", F.lit("202610"))
+    late = late.withColumn("ride_id", F.concat(F.col("ride_id"), F.lit("-late")))
+    fact = medallion.fact_trips.unionByName(late)
+
+    month = aggregates.month_facts(fact, "202609")
+    kpis = aggregates.build_daily_kpis(month, medallion.dim_weather)
+    day = kpis.filter("date_key = 20260901").collect()
+
+    assert sorted(r.member_type for r in day) == ["casual", "member"]  # one row per member type, not per file
+    assert sum(r.trips for r in kpis.collect()) == month.count()
+    assert {r.trip_month for r in kpis.collect()} == {"202609"}
+    stations = aggregates.build_station_monthly(month)
+    assert stations.groupBy("trip_month", "station_key").count().filter("count > 1").count() == 0

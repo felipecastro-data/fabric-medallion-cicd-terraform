@@ -53,6 +53,7 @@ from divvy_medallion.control import (
     append_runs,
     combine_watermarks,
     last_success,
+    last_success_by_period,
     latest_succeeded_batches,
     needs_rebuild,
     periods_to_process,
@@ -148,19 +149,35 @@ for source, upstream_source, build, table in (
 import notebookutils
 
 silver_trips = read(silver.table(trips.SILVER_TABLE))
+fact_path = gold.table(facts.FACT_TRIPS_TABLE)
 for period in todo:
     run = IngestionRun(SOURCE, period, upstream[period])  # batch_id = the Silver batches this run consumed
     try:
-        fact_path = gold.table(facts.FACT_TRIPS_TABLE)
         overwrite_partition(facts.build_fact_trips(silver_trips.filter(silver_trips[PERIOD_COLUMN] == period)),
                             fact_path, PERIOD_COLUMN, period)
-        fact = read(fact_path).filter(f"{PERIOD_COLUMN} = '{period}'")
-        dim_weather = read(gold.table(dimensions.DIM_WEATHER_TABLE))
-        overwrite_partition(aggregates.build_daily_kpis(fact, dim_weather),
-                            gold.table(aggregates.DAILY_KPIS_TABLE), PERIOD_COLUMN, period)
-        overwrite_partition(aggregates.build_station_monthly(fact),
-                            gold.table(aggregates.STATION_MONTHLY_TABLE), PERIOD_COLUMN, period)
-        run.succeed(fact.count(), silver.table(trips.SILVER_TABLE))
+        run.succeed(read(fact_path).filter(f"{PERIOD_COLUMN} = '{period}'").count(), silver.table(trips.SILVER_TABLE))
+    except Exception as exc:
+        run.fail(exc)
+    append_runs(spark, log_path, [run])
+    runs.append(run)
+
+# Aggregates are keyed by the trip's own month: month M is rebuilt from the M and M+1 source files whenever
+# either was (re)loaded after M's last successful aggregation (own watermark -> a failed build is retried).
+AGG_SOURCE = "gold.aggregates"
+fact_loaded_at = last_success_by_period(spark, log_path, SOURCE)
+months = aggregates.months_to_refresh(fact_loaded_at, last_success_by_period(spark, log_path, AGG_SOURCE))
+if months:
+    fact_all, dim_weather = read(fact_path), read(gold.table(dimensions.DIM_WEATHER_TABLE))
+for month in months:
+    fed_at = max(fact_loaded_at[p] for p in aggregates.source_periods(month) if p in fact_loaded_at)
+    run = IngestionRun(AGG_SOURCE, month, f"facts@{fed_at.isoformat()}")
+    try:
+        month_fact = aggregates.month_facts(fact_all, month)
+        overwrite_partition(aggregates.build_daily_kpis(month_fact, dim_weather),
+                            gold.table(aggregates.DAILY_KPIS_TABLE), aggregates.TRIP_MONTH_COLUMN, month)
+        overwrite_partition(aggregates.build_station_monthly(month_fact),
+                            gold.table(aggregates.STATION_MONTHLY_TABLE), aggregates.TRIP_MONTH_COLUMN, month)
+        run.succeed(month_fact.count())
     except Exception as exc:
         run.fail(exc)
     append_runs(spark, log_path, [run])
@@ -172,7 +189,8 @@ for r in runs:
 summary = {
     "source": SOURCE,
     "processed": [r.period for r in runs if r.status == "SUCCEEDED" and r.source == SOURCE],
-    "dimensions": [r.source for r in runs if r.status == "SUCCEEDED" and r.source != SOURCE],
+    "aggregated_months": [r.period for r in runs if r.status == "SUCCEEDED" and r.source == AGG_SOURCE],
+    "dimensions": [r.source for r in runs if r.status == "SUCCEEDED" and r.source.startswith("gold.dim_")],
     "failed": [f"{r.source}:{r.period}" for r in failed],
     "no_silver": missing_upstream,
 }

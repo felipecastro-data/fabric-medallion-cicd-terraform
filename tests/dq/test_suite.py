@@ -2,14 +2,14 @@ from dataclasses import replace
 from datetime import date, datetime
 
 from divvy_medallion.dq.rules import blocking_failures, run_checks
-from divvy_medallion.dq.suite import DQ_RESULTS_SCHEMA, period_checks, results_frame, table_checks
+from divvy_medallion.dq.suite import DQ_RESULTS_SCHEMA, month_checks, period_checks, results_frame, table_checks
 
 NOW = datetime(2026, 10, 22, 12)
 
 
 def _run(tables, gold_built_at=NOW):
     checks = table_checks(tables, latest_bronze_period="202609", gold_built_at=gold_built_at, today=NOW.date(), now=NOW)
-    return run_checks([*checks, *period_checks(tables, "202609")])
+    return run_checks([*checks, *period_checks(tables, "202609"), *month_checks(tables, "202609")])
 
 
 def test_consistent_medallion_passes_every_check(medallion):
@@ -49,3 +49,11 @@ def test_results_frame_matches_the_dq_results_schema(spark, medallion):
     assert df.count() == len(results)
     assert df.filter("outcome = 'passed'").count() == len(results)
     assert date(2026, 10, 22) == df.first().checked_at.date()
+
+
+def test_a_day_split_across_source_files_fails_the_aggregate_grain_check(medallion):
+    split = medallion.daily_kpis.filter("date_key = 20260901")
+    broken = replace(medallion, daily_kpis=medallion.daily_kpis.unionByName(split))
+    blocking = {r.check for r in blocking_failures(_run(broken))}
+
+    assert "agg_daily_kpis.unique_grain" in blocking
