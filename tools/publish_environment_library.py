@@ -73,7 +73,12 @@ def find_environment(api: Fabric, workspace_id: str, name: str) -> str:
 
 
 def staged_wheels(api: Fabric, base: str) -> list[str]:
-    _, _, payload = api.request("GET", f"{base}/staging/libraries")
+    try:
+        _, _, payload = api.request("GET", f"{base}/staging/libraries")
+    except RuntimeError as err:
+        if "EnvironmentLibrariesNotFound" in str(err):  # empty environment answers 404, not []
+            return []
+        raise
     payload = payload or {}
     names = [lib.get("name") for lib in payload.get("libraries", []) if str(lib.get("name", "")).endswith(".whl")]
     names += (payload.get("customLibraries") or {}).get("wheelFiles") or []  # legacy response shape
