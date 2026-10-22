@@ -12,7 +12,6 @@ import zipfile
 from pathlib import Path
 
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.types import StringType, StructField, StructType
 
 from divvy_medallion.periods import validate_period
 
@@ -35,7 +34,6 @@ COLUMNS: tuple[str, ...] = (
     "end_lng",
     "member_casual",
 )
-RAW_SCHEMA = StructType([StructField(c, StringType(), True) for c in COLUMNS])
 
 
 class SchemaDriftError(ValueError):
@@ -76,15 +74,18 @@ def validate_header(header: list[str]) -> None:
 
 
 def read_raw(spark: SparkSession, path: str) -> DataFrame:
-    """Read a Divvy CSV as all-string columns after checking the header for schema drift."""
-    header = spark.read.option("header", True).csv(path).columns
-    validate_header(header)
-    return (
+    """Read a Divvy CSV as all-string columns, binding columns by header *name* (never by position).
+
+    Without an explicit schema and with ``inferSchema`` off, Spark keeps every column as a string and
+    names it from the header, so a reordered file still lands each value under the right column.
+    """
+    df = (
         spark.read.option("header", True)
+        .option("inferSchema", False)
         .option("quote", '"')
         .option("escape", '"')
         .option("mode", "PERMISSIVE")
-        .schema(RAW_SCHEMA)
         .csv(path)
-        .select(*COLUMNS)
     )
+    validate_header(df.columns)
+    return df.select(*COLUMNS)

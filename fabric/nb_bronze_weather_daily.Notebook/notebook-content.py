@@ -37,6 +37,14 @@ import uuid
 
 import notebookutils
 
+try:
+    import divvy_medallion  # noqa: F401
+except ModuleNotFoundError as exc:  # fail fast with an actionable message
+    raise ModuleNotFoundError(
+        "divvy_medallion is not installed in this Spark session: set env_divvy as the workspace default "
+        "environment (Workspace settings > Spark settings > Environment) or attach it to this notebook"
+    ) from exc
+
 from divvy_medallion import lakehouse
 from divvy_medallion.bronze import PERIOD_COLUMN, add_ingestion_metadata, weather
 from divvy_medallion.control import IngestionRun, append_runs, succeeded_periods
