@@ -109,6 +109,12 @@ def periods_to_process(
     return available if force else [p for p in available if (p, upstream[p]) not in processed]
 
 
+def combine_watermarks(primary: dict[str, str], *others: dict[str, str]) -> dict[str, str]:
+    """Composite per-period watermark for a step with several inputs: periods come from ``primary``; the step
+    re-runs a period when any input got a newer batch (``-`` marks an input with no batch for that period)."""
+    return {p: "|".join([batch, *(o.get(p, "-") for o in others)]) for p, batch in primary.items()}
+
+
 def last_success(spark: SparkSession, path: str, source: str) -> datetime | None:
     """``finished_at`` of the most recent successful run of ``source`` (None if it never succeeded)."""
     runs = _succeeded(spark, path, source)

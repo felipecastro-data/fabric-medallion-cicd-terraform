@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 5 of 8 — 62%**
+**Progress: Step 6 of 8 — 70%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -8,8 +8,8 @@
 | 2 | Terraform — dev/test/prod workspaces, lakehouses, environment, roles, deployment pipeline, TF CI | ✅ Done |
 | 3 | Git integration & branching — dev workspace ↔ `/fabric`, branch protection, PR template | ✅ Done |
 | 4 | Bronze — idempotent incremental ingestion (Divvy + Open-Meteo), watermark, metadata | ✅ Done |
-| 5 | Silver — `src/` PySpark package as wheel, cleansing, dedup, quarantine, station dim | 🟡 In progress |
-| 6 | Gold & data quality — star schema, aggregates, `dq_results`, pytest + chispa | ⬜ |
+| 5 | Silver — `src/` PySpark package as wheel, cleansing, dedup, quarantine, station dim | ✅ Done |
+| 6 | Gold & data quality — star schema, aggregates, `dq_results`, pytest + chispa | 🟡 In progress |
 | 7 | Orchestration & CD — Data Pipeline, GitHub Actions CI/CD, Deployment Pipeline, approvals, smoke tests | ⬜ |
 | 8 | Observability & showcase — run log, DQ trends, failure alerts, README screenshots, LinkedIn post | ⬜ |
 
@@ -62,4 +62,16 @@
 - [x] Package 0.2.0, 61 tests; publish tool gains publish-only mode
 - [x] Feature-workspace run 202608–202609: valid + quarantined = Bronze rows exactly; 1,697 stations
 - [x] PR #5 review: duplicates quarantined, ms-precision durations, stations watermark; breaking type change handled with explicit `rebuild=True` (verified over OneLake)
+- [x] PR merged; dev updated + `env_divvy` published
+
+## Step 6 checklist
+
+- [x] `lh_gold` star schema: `dim_date` (calendar + US holidays), `dim_station` (+ dockless member, key -1), `dim_weather`, `fact_trips`
+- [x] Deterministic surrogate keys (`yyyyMMdd`, hash of `station_id`): facts never re-keyed when a dimension is rebuilt
+- [x] Aggregates: `agg_daily_kpis` (day x member type, with weather), `agg_station_monthly` (starts, ends, net flow)
+- [x] Incremental: a period is rebuilt when Silver trips *or* weather has a newer batch (composite watermark)
+- [x] DQ rules in code (not_null, unique, accepted_values, range, FK, reconciliation, ratio, freshness) with `error`/`warn` severity
+- [x] `nb_dq_checks` appends to `dq_results` and fails on any `error` check (pipeline gate for Step 7)
+- [x] Package 0.3.0, 96 tests (end-to-end Bronze -> Gold fixture checked by the DQ suite)
+- [ ] Feature-workspace run 202608–202609: Bronze -> Silver -> Gold -> DQ, verified over OneLake
 - [ ] PR merged; dev updated + `env_divvy` published
