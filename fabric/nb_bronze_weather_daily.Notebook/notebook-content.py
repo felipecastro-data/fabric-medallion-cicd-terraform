@@ -12,14 +12,10 @@
 # MARKDOWN ********************
 
 # ## Bronze · Daily weather (Open-Meteo)
-#
-# Lands daily Chicago weather from the Open-Meteo archive API in `lh_bronze`:
-#
-# * raw API response under `Files/raw/weather/<YYYYMM>.json` (replayable)
-# * `dbo.weather_daily` — one row per day, partitioned by `_period`
-# * `dbo.ingestion_log` — one row per period and run
-#
-# Same idempotency and skip rules as `nb_bronze_divvy_trips`.
+# - Lands daily Chicago weather from the Open-Meteo archive API in `lh_bronze`; raw responses are kept under `Files/raw/weather/<YYYYMM>.json` (replayable)
+# - `dbo.weather_daily`: one row per day, partitioned by `_period`
+# - `dbo.ingestion_log`: one row per period and run
+# - Same idempotency and skip rules as `nb_bronze_divvy_trips`
 
 # PARAMETERS CELL ********************
 

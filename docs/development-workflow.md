@@ -25,6 +25,9 @@ flowchart LR
 ## Code (Python package, tests, Terraform, workflows)
 
 1. `git switch -c feat/<topic>`, make the change, run `uv run ruff check . && uv run pytest`.
+   If `src/` changed, bump the version in `pyproject.toml` and run `python tools/sync_environment_wheel.py` —
+   the wheel lives inside `fabric/env_divvy.Environment` so every workspace gets the exact library;
+   CI (`environment wheel up to date`) fails if the committed wheel was not built from the committed source.
 2. Push and open a pull request. `ci` runs on every PR; `terraform` adds a plan comment when `infra/` changes.
 3. Squash-merge. Terraform changes are applied after manual approval on the `platform` environment.
 

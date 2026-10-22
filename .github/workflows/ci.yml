@@ -52,10 +52,18 @@ jobs:
           python-version: "3.11"
       - run: python tools/validate_fabric_items.py fabric
 
+  environment-wheel:
+    name: environment wheel up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.1
+      - run: uv run --no-project python tools/sync_environment_wheel.py --check
+
   ci:
     name: ci
     if: always()
-    needs: [lint, test, fabric-items]
+    needs: [lint, test, fabric-items, environment-wheel]
     runs-on: ubuntu-latest
     steps:
       - name: All required jobs passed

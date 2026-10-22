@@ -12,15 +12,11 @@
 # MARKDOWN ********************
 
 # ## Bronze · Divvy trips
-#
-# Lands monthly Divvy trip files in `lh_bronze`:
-#
-# * raw `.zip` and `.csv` archived under `Files/raw/divvy/<YYYYMM>/` (replayable)
-# * `dbo.divvy_trips` — all columns as strings + lineage columns, partitioned by `_period`
-# * `dbo.ingestion_log` — one row per period and run (status, rows, error)
-#
-# **Idempotent:** a period is replaced, never appended twice. Periods already loaded are skipped unless `force=True`.
-# Logic lives in the tested `divvy_medallion` package (installed through the workspace environment `env_divvy`).
+# - Lands monthly Divvy trip files in `lh_bronze`; raw `.zip` and `.csv` are archived under `Files/raw/divvy/<YYYYMM>/` (replayable)
+# - `dbo.divvy_trips`: all columns as strings + lineage columns, partitioned by `_period`
+# - `dbo.ingestion_log`: one row per period and run (status, rows, error)
+# - **Idempotent:** a period is replaced, never appended twice; periods already loaded are skipped unless `force=True`
+# - Logic lives in the tested `divvy_medallion` package, shipped in the workspace environment `env_divvy`
 
 # PARAMETERS CELL ********************
 
