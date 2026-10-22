@@ -1,3 +1,3 @@
 """PySpark transformations and data-quality rules for the Divvy medallion lakehouse."""
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"

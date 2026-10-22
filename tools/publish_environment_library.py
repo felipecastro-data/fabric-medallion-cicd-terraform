@@ -1,10 +1,13 @@
-"""Upload a Python wheel to a Fabric Environment and publish it.
+"""Publish a Fabric Environment, optionally uploading a Python wheel first.
 
-Replaces any previously staged wheel of the same distribution, then publishes and waits for the
-publish to finish. Authenticates with the Azure CLI (``az login`` locally, ``azure/login`` OIDC in CI).
+Fabric's "Update from Git" and "Branch out" only *stage* an Environment (libraries + Spark compute); the
+active version stays the previous publish until someone publishes. Run without a wheel to publish what
+Git staged; with a wheel to replace the staged wheel of the same distribution first. Waits for the publish
+to finish. Authenticates with the Azure CLI (``az login`` locally, ``azure/login`` OIDC in CI).
 
 Usage:
-    python tools/publish_environment_library.py --workspace-id <id> --environment env_divvy dist/*.whl
+    python tools/publish_environment_library.py --workspace-id <id>                 # publish staged
+    python tools/publish_environment_library.py --workspace-id <id> dist/x.whl      # upload + publish
 """
 
 from __future__ import annotations
@@ -100,31 +103,37 @@ def wait_for_publish(api: Fabric, workspace_id: str, environment_id: str, timeou
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("wheel", type=Path)
+    parser.add_argument(
+        "wheel",
+        type=Path,
+        nargs="?",
+        help="wheel to upload; omit to publish what is already staged (e.g. after 'Update from Git', which only stages)",
+    )
     parser.add_argument("--workspace-id", required=True)
     parser.add_argument("--environment", default="env_divvy")
     parser.add_argument("--timeout", type=int, default=1800, help="publish timeout in seconds")
     args = parser.parse_args(argv)
 
-    wheel: Path = args.wheel
-    distribution = wheel.name.split("-")[0]
     api = Fabric(_token())
     environment_id = find_environment(api, args.workspace_id, args.environment)
     base = f"/workspaces/{args.workspace_id}/environments/{environment_id}"
-    print(f"Environment {args.environment} ({environment_id})")
+    print(f"Environment {args.environment} ({environment_id}); staged: {staged_wheels(api, base)}")
 
-    for old in staged_wheels(api, base):
-        if old.split("-")[0] == distribution and old != wheel.name:
-            print(f"  removing staged {old}")
-            api.request("DELETE", f"{base}/staging/libraries/{urllib.parse.quote(old)}")
+    wheel: Path | None = args.wheel
+    if wheel is not None:
+        distribution = wheel.name.split("-")[0]
+        for old in staged_wheels(api, base):
+            if old.split("-")[0] == distribution and old != wheel.name:
+                print(f"  removing staged {old}")
+                api.request("DELETE", f"{base}/staging/libraries/{urllib.parse.quote(old)}")
 
-    print(f"  uploading {wheel.name} ({wheel.stat().st_size / 1024:.0f} KiB)")
-    api.request(
-        "POST",
-        f"{base}/staging/libraries/{urllib.parse.quote(wheel.name)}",
-        body=wheel.read_bytes(),
-        content_type="application/octet-stream",
-    )
+        print(f"  uploading {wheel.name} ({wheel.stat().st_size / 1024:.0f} KiB)")
+        api.request(
+            "POST",
+            f"{base}/staging/libraries/{urllib.parse.quote(wheel.name)}",
+            body=wheel.read_bytes(),
+            content_type="application/octet-stream",
+        )
 
     print("  publishing (this usually takes 3-10 minutes)")
     api.request("POST", f"{base}/staging/publish?beta=false")
@@ -132,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     if state != "success":
         print(f"::error::Environment publish finished with state '{state}'")
         return 1
-    print(f"Published {wheel.name} to {args.environment}")
+    print(f"Published {args.environment}: {staged_wheels(api, base)}")
     return 0
 
 
