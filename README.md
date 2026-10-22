@@ -64,6 +64,12 @@ flowchart LR
 |---|---|
 | ![ci workflow: ruff, pytest, Fabric item validation](docs/screenshots/05-ci-checks.webp) | ![Pull request merged after resolving review findings](docs/screenshots/06-pr-review-gate.webp) |
 
+### Bronze layer
+
+| Idempotent monthly ingestion (770,562 trips = source row count) | Bronze tables + ingestion log in `lh_bronze` |
+|---|---|
+| ![nb_bronze_divvy_trips run summary](docs/screenshots/07-bronze-divvy-run.webp) | ![lh_bronze tables](docs/screenshots/09-bronze-lakehouse-tables.webp) |
+
 ## Repository layout
 
 ```
