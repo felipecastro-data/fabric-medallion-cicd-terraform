@@ -70,6 +70,18 @@ flowchart LR
 |---|---|
 | ![nb_bronze_divvy_trips run summary](docs/screenshots/07-bronze-divvy-run.webp) | ![lh_bronze tables](docs/screenshots/09-bronze-lakehouse-tables.webp) |
 
+### Silver layer
+
+`nb_silver_trips` types, validates and deduplicates every Bronze period. Failing rows are **quarantined with reason codes,
+never dropped** — valid + quarantined always equals the Bronze row count:
+
+| Period | Bronze rows | Silver `trips` | `trips_quarantine` |
+|---|---:|---:|---:|
+| 2026-08 | 868,191 | 846,665 | 21,526 (2.5%) |
+| 2026-09 | 770,562 | 751,366 | 19,196 (2.5%) |
+
+![nb_silver_trips run summary](docs/screenshots/10-silver-trips-run.webp)
+
 ## Repository layout
 
 ```
