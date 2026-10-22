@@ -20,7 +20,7 @@
 
 # PARAMETERS CELL ********************
 
-periods = "last:12"  # YYYYMM | YYYYMM-YYYYMM | last:N | comma-separated
+periods = "202608-202609"  # YYYYMM | YYYYMM-YYYYMM | last:N | comma-separated
 force = False        # True = reload periods that already succeeded
 batch_id = ""        # set by the orchestration pipeline; generated when empty
 
