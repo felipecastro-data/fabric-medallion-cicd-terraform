@@ -12,6 +12,7 @@ Quality rules (a row may fail several; every failure is recorded in ``dq_reasons
 ``coordinates_out_of_range`` start/end outside the Chicago service area
 ``unknown_rideable_type``   value outside the known bike types
 ``unknown_member_type``     value other than member/casual
+``duplicate_ride_id``       a newer ingestion of the same ``ride_id`` was kept (applied after the rules above)
 =========================== =================================================================
 
 Missing station IDs are *not* a failure: dockless e-bike trips legitimately start/end outside a station.
@@ -101,7 +102,8 @@ def standardize(bronze: DataFrame) -> DataFrame:
         PERIOD_COLUMN,
     )
     return (
-        df.withColumn("duration_s", F.col("ended_at").cast("long") - F.col("started_at").cast("long"))
+        # millisecond precision: 59.9 s must still count as "under 60 s" and 24 h + 0.5 s as "over 24 h"
+        df.withColumn("duration_s", (F.unix_micros("ended_at") - F.unix_micros("started_at")) / F.lit(1_000_000.0))
         .withColumn("trip_date", F.to_date("started_at"))
         .withColumn("start_hour", F.hour("started_at"))
         .withColumn("day_of_week", F.date_format("started_at", "E"))
@@ -127,7 +129,7 @@ def quality_rules() -> dict[str, Column]:
         "missing_ride_id": F.col("ride_id").isNull(),
         "invalid_timestamp": ~has_times,
         "non_positive_duration": has_times & (F.col("duration_s") <= 0),
-        "duration_under_60s": has_times & F.col("duration_s").between(1, MIN_DURATION_S - 1),
+        "duration_under_60s": has_times & (F.col("duration_s") > 0) & (F.col("duration_s") < MIN_DURATION_S),
         "duration_over_24h": has_times & (F.col("duration_s") > MAX_DURATION_S),
         "missing_end_coordinates": F.col("end_lat").isNull() | F.col("end_lng").isNull(),
         "coordinates_out_of_range": ~(
@@ -147,16 +149,27 @@ def apply_quality_rules(df: DataFrame) -> DataFrame:
     return df.withColumn("dq_reasons", F.filter(F.array(*failures), lambda reason: reason.isNotNull()))
 
 
-def deduplicate(df: DataFrame) -> DataFrame:
-    """Keep one row per ``ride_id``: the most recently ingested version."""
+def flag_duplicates(df: DataFrame) -> DataFrame:
+    """Append ``duplicate_ride_id`` to every version of a ``ride_id`` except the most recently ingested one,
+    so superseded rows are quarantined instead of silently dropped. Expects rule-passing rows only."""
     latest_first = Window.partitionBy("ride_id").orderBy(F.col("_ingested_at").desc(), F.col("_source_file").desc())
-    return df.withColumn("_rn", F.row_number().over(latest_first)).filter("_rn = 1").drop("_rn")
+    superseded = F.row_number().over(latest_first) > 1
+    return df.withColumn(
+        "dq_reasons",
+        F.when(superseded, F.array_union("dq_reasons", F.array(F.lit("duplicate_ride_id")))).otherwise(
+            F.col("dq_reasons")
+        ),
+    )
 
 
 def transform(bronze: DataFrame) -> tuple[DataFrame, DataFrame]:
-    """Return ``(valid, quarantine)``. Valid rows are deduplicated; quarantine keeps every failing row."""
+    """Return ``(valid, quarantine)``: one valid row per ``ride_id``; every other Bronze row is quarantined
+    with its reasons, so ``valid + quarantine == bronze`` row for row."""
     checked = apply_quality_rules(standardize(bronze))
+    passing = checked.filter(F.size("dq_reasons") == 0)
+    failing = checked.filter(F.size("dq_reasons") > 0)
+    deduped = flag_duplicates(passing)
     is_valid = F.size("dq_reasons") == 0
-    valid = deduplicate(checked.filter(is_valid)).select(*SILVER_COLUMNS)
-    quarantine = checked.filter(~is_valid).withColumn("_quarantined_at", F.current_timestamp())
+    valid = deduped.filter(is_valid).select(*SILVER_COLUMNS)
+    quarantine = failing.unionByName(deduped.filter(~is_valid)).withColumn("_quarantined_at", F.current_timestamp())
     return valid, quarantine

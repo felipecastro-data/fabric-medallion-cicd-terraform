@@ -49,7 +49,9 @@ from divvy_medallion.bronze import PERIOD_COLUMN, divvy
 from divvy_medallion.control import (
     IngestionRun,
     append_runs,
+    last_success,
     latest_succeeded_batches,
+    needs_rebuild,
     periods_to_process,
     processed_batches,
 )
@@ -96,12 +98,22 @@ for period in todo:
     append_runs(spark, log_path, [run])
     runs.append(run)
 
-if any(r.status == "SUCCEEDED" for r in runs):
-    all_trips = spark.read.format("delta").load(silver.table(trips.SILVER_TABLE))
-    stations.build_stations(all_trips).write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(
-        silver.table(stations.STATIONS_TABLE)
-    )
-    print(f"stations rebuilt: {spark.read.format('delta').load(silver.table(stations.STATIONS_TABLE)).count()}")
+# Stations is rebuilt whenever trips changed after its own last successful build (own watermark):
+# a failed rebuild is repaired by a normal retry even when every period is already processed.
+STATIONS_SOURCE = "silver.stations"
+trips_changed_at = last_success(spark, log_path, SOURCE)
+if needs_rebuild(trips_changed_at, last_success(spark, log_path, STATIONS_SOURCE)):
+    run = IngestionRun(STATIONS_SOURCE, "ALL", f"trips@{trips_changed_at.isoformat()}")
+    try:
+        all_trips = spark.read.format("delta").load(silver.table(trips.SILVER_TABLE))
+        stations.build_stations(all_trips).write.format("delta").mode("overwrite").option(
+            "overwriteSchema", "true"
+        ).save(silver.table(stations.STATIONS_TABLE))
+        run.succeed(spark.read.format("delta").load(silver.table(stations.STATIONS_TABLE)).count())
+    except Exception as exc:
+        run.fail(exc)
+    append_runs(spark, log_path, [run])
+    runs.append(run)
 
 failed = [r for r in runs if r.status == "FAILED"]
 for r in runs:

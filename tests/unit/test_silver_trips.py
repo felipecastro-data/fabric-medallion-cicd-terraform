@@ -71,7 +71,7 @@ def test_standardize_types_and_derives_attributes(spark):
 
 def test_timestamps_without_milliseconds_are_parsed(spark):
     row = trips.standardize(_bronze(spark, [{"started_at": "2026-09-01 08:00:00", "ended_at": "2026-09-01 08:01:30"}]))
-    assert row.first().duration_s == 90
+    assert row.first().duration_s == 90.0
 
 
 @pytest.mark.parametrize(
@@ -108,16 +108,53 @@ def test_row_failing_several_rules_records_all_reasons(spark):
     assert set(quarantine.first().dq_reasons) == {"missing_ride_id", "missing_end_coordinates", "unknown_member_type"}
 
 
-def test_duplicates_keep_latest_ingested_version(spark):
+def test_duplicates_keep_latest_and_quarantine_the_rest(spark):
     rows = [
         {"_ingested_at": datetime(2026, 10, 1), "end_station_name": "old"},
         {"_ingested_at": datetime(2026, 10, 2), "end_station_name": "new"},
         {"ride_id": "R2"},
     ]
-    valid, _ = trips.transform(_bronze(spark, rows))
+    valid, quarantine = trips.transform(_bronze(spark, rows))
 
     assert valid.count() == 2
     assert valid.filter("ride_id = 'R1'").first().end_station_name == "new"
+    superseded = quarantine.first()
+    assert (superseded.end_station_name, superseded.dq_reasons) == ("old", ["duplicate_ride_id"])
+
+
+def test_failing_duplicate_does_not_displace_a_valid_version(spark):
+    rows = [
+        {"_ingested_at": datetime(2026, 10, 1)},  # valid
+        {"_ingested_at": datetime(2026, 10, 2), "end_lat": None},  # newer but fails a rule
+    ]
+    valid, quarantine = trips.transform(_bronze(spark, rows))
+
+    assert valid.count() == 1
+    assert quarantine.first().dq_reasons == ["missing_end_coordinates"]
+
+
+@pytest.mark.parametrize(
+    ("ended_at", "expected_reasons"),
+    [
+        ("2026-09-01 08:00:59.900", ["duration_under_60s"]),  # 59.9 s
+        ("2026-09-01 08:01:00.000", []),  # exactly 60 s
+        ("2026-09-02 08:00:00.000", []),  # exactly 24 h
+        ("2026-09-02 08:00:00.500", ["duration_over_24h"]),  # 24 h + 0.5 s
+    ],
+)
+def test_duration_limits_use_millisecond_precision(spark, ended_at, expected_reasons):
+    df = trips.apply_quality_rules(
+        trips.standardize(_bronze(spark, [{"started_at": "2026-09-01 08:00:00.000", "ended_at": ended_at}]))
+    )
+    assert df.first().dq_reasons == expected_reasons
+
+
+def test_fractional_duration_under_one_second_is_a_false_start(spark):
+    df = trips.standardize(
+        _bronze(spark, [{"started_at": "2026-09-01 08:00:00.100", "ended_at": "2026-09-01 08:00:00.900"}])
+    )
+    row = trips.apply_quality_rules(df).first()
+    assert (row.duration_s, row.dq_reasons) == (0.8, ["duration_under_60s"])
 
 
 def test_valid_output_has_the_silver_contract(spark):
@@ -126,7 +163,15 @@ def test_valid_output_has_the_silver_contract(spark):
 
 
 def test_valid_plus_quarantine_accounts_for_every_bronze_row(spark):
-    bronze = _bronze(spark, [{}, {"ride_id": "R2", "end_lat": None}, {"ride_id": "R3", "ended_at": "bad"}])
+    bronze = _bronze(
+        spark,
+        [
+            {},
+            {"_ingested_at": datetime(2026, 9, 30)},  # superseded duplicate of R1
+            {"ride_id": "R2", "end_lat": None},
+            {"ride_id": "R3", "ended_at": "bad"},
+        ],
+    )
     valid, quarantine = trips.transform(bronze)
     assert valid.count() + quarantine.count() == bronze.count()
 

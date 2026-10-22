@@ -107,3 +107,20 @@ def periods_to_process(
     """Requested periods whose latest upstream batch has not been processed yet (all available if ``force``)."""
     available = [p for p in requested if p in upstream]
     return available if force else [p for p in available if (p, upstream[p]) not in processed]
+
+
+def last_success(spark: SparkSession, path: str, source: str) -> datetime | None:
+    """``finished_at`` of the most recent successful run of ``source`` (None if it never succeeded)."""
+    runs = _succeeded(spark, path, source)
+    if runs is None:
+        return None
+    return runs.agg(F.max("finished_at").alias("t")).first().t
+
+
+def needs_rebuild(upstream_last: datetime | None, dimension_last: datetime | None) -> bool:
+    """A derived table must be rebuilt when its inputs changed after its own last successful build.
+
+    Tracked separately from the per-period runs, so a failed rebuild is repaired by an ordinary retry
+    even though every period is already up to date.
+    """
+    return upstream_last is not None and (dimension_last is None or dimension_last < upstream_last)
