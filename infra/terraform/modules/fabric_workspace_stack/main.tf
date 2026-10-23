@@ -51,7 +51,8 @@ resource "fabric_spark_workspace_settings" "this" {
   pool = {
     starter_pool = {
       max_node_count = var.starter_pool_max_nodes
-      max_executors  = var.starter_pool_max_nodes
+      # one node runs the driver: Fabric rejects max_executors >= max_node_count on update (accepted only on create)
+      max_executors = var.starter_pool_max_nodes - 1
     }
   }
 

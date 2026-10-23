@@ -24,8 +24,13 @@ variable "lakehouses" {
 }
 
 variable "starter_pool_max_nodes" {
-  description = "Maximum node count for the starter Spark pool."
+  description = "Maximum node count for the starter Spark pool (driver + executors, so at least 2)."
   type        = number
+
+  validation {
+    condition     = var.starter_pool_max_nodes >= 2
+    error_message = "A starter pool needs at least 2 nodes: one for the driver and one per executor."
+  }
 }
 
 variable "session_timeout_minutes" {
