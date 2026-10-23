@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 8 of 8 — 95%**
+**Progress: complete — 8 of 8 steps, 100%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -11,7 +11,7 @@
 | 5 | Silver — `src/` PySpark package as wheel, cleansing, dedup, quarantine, station dim | ✅ Done |
 | 6 | Gold & data quality — star schema, aggregates, `dq_results`, pytest + chispa | ✅ Done |
 | 7 | Orchestration & CD — Data Pipeline, GitHub Actions CI/CD, Deployment Pipeline, approvals, smoke tests | ✅ Done |
-| 8 | Observability & showcase — run log, DQ trends, failure alerts, README screenshots, LinkedIn post | 🟡 In progress |
+| 8 | Observability & showcase — run log, DQ trends, failure alerts, README screenshots, LinkedIn post | ✅ Done |
 
 ## Step 1 checklist
 
@@ -100,5 +100,7 @@
       `prod-alert` GitHub issue on failure, closes it on recovery (`tools/monitor_prod.py`, unit-tested)
 - [x] Charts from the prod lakehouse (`tools/ops_charts.py`): daily trips with rainy days, quarantine reasons
 - [x] Final README: badges, architecture, what makes it production-grade, what the gates caught, results, run it yourself
-- [ ] LinkedIn post
-- [ ] Cleanup: delete the `divvy-medallion-feat-gold` workspace
+- [x] `monitor` verified in CI on `main`: the service principal reads prod's `dq_results` over OneLake (WARN: 143
+      July-31 trips without weather, as expected; no alert issue)
+- [x] LinkedIn post drafted
+- [x] Cleanup: `divvy-medallion-feat-gold` workspace deleted
