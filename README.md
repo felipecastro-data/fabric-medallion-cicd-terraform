@@ -1,54 +1,116 @@
 # Fabric Medallion Lakehouse — Terraform · CI/CD · Data Quality
 
-> 🚧 **Work in progress** — see [docs/PLAN.md](docs/PLAN.md) for live progress and
-> [docs/development-workflow.md](docs/development-workflow.md) for the branching model.
+[![ci](https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/actions/workflows/ci.yml/badge.svg)](https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/actions/workflows/ci.yml)
+[![deploy](https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/actions/workflows/deploy.yml/badge.svg)](https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/actions/workflows/deploy.yml)
+[![terraform](https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/actions/workflows/terraform.yml/badge.svg)](https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/actions/workflows/terraform.yml)
+[![monitor](https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/actions/workflows/monitor.yml/badge.svg)](https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/actions/workflows/monitor.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Production-grade data engineering project on **Microsoft Fabric**: a bronze / silver / gold lakehouse built on
-real Chicago **Divvy** bike-share trips enriched with **Open-Meteo** weather, provisioned with **Terraform**,
-promoted Dev → Test → Prod through **GitHub Actions** and **Fabric Deployment Pipelines**, and guarded by
-**PySpark unit tests** and **data-quality checks**.
+A production-grade data platform on **Microsoft Fabric**, built the way a platform team would run it: a
+bronze / silver / gold lakehouse on real Chicago **Divvy** bike-share trips enriched with **Open-Meteo** weather,
+**provisioned with Terraform**, **promoted dev → test → prod by GitHub Actions and Fabric deployment pipelines**, and
+**guarded by tests and a data-quality gate at every step**. No secrets anywhere — every automated call uses GitHub
+OIDC federated with an Entra service principal.
+
+| At a glance | |
+|---|---|
+| Environments | 3 Fabric workspaces (dev / test / prod), each with `lh_bronze` · `lh_silver` · `lh_gold` — all Terraform |
+| Data | ~2.5M raw trips, **1.6M valid trips** in prod, daily weather, 1,700 stations; every rejected row kept with reason codes |
+| Quality | **117 unit tests** (local Spark + Delta) · **45 data-quality checks** per pipeline run · pipeline fails on any `error` check |
+| Delivery | 11 reviewed pull requests · CD on every merge (dev → test → **prod with approval**) · weekly prod schedule · daily health monitor |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     subgraph Sources
-        S1[Divvy trip data<br/>monthly files]
-        S2[Open-Meteo<br/>weather API]
+        S1[Divvy trips<br/>monthly zip files]
+        S2[Open-Meteo<br/>archive API]
     end
-    subgraph Fabric["Microsoft Fabric workspace (dev / test / prod)"]
-        B[(lh_bronze<br/>raw Delta)]
-        SV[(lh_silver<br/>clean · deduped · quarantine)]
-        G[(lh_gold<br/>star schema · KPIs · dq_results)]
-        P{{Data Pipeline<br/>orchestration}}
+    subgraph WS["Fabric workspace · dev / test / prod (Terraform)"]
+        direction LR
+        B[(lh_bronze<br/>raw Delta + ingestion_log)]
+        SV[(lh_silver<br/>typed · deduped<br/>trips_quarantine · stations)]
+        G[(lh_gold<br/>star schema · daily KPIs<br/>dq_results)]
+        P{{pl_medallion<br/>Bronze → Silver → Gold → DQ gate}}
+        E[[env_divvy<br/>Spark env + package wheel]]
     end
     S1 --> B
     S2 --> B
     B --> SV --> G
-    P -.runs.-> B & SV & G
+    P -. orchestrates .-> B & SV & G
+    E -. runs .-> P
 ```
 
 ```mermaid
 flowchart LR
-    Dev[Feature branch] -->|PR: lint · pytest · terraform plan| Main[main]
-    Main -->|sync| WSD[Dev workspace]
-    WSD -->|Deployment Pipeline| WST[Test workspace]
-    WST -->|manual approval| WSP[Prod workspace]
+    PR[Pull request] -->|ci: ruff · pytest · item validation · wheel check · actionlint<br/>terraform: fmt · validate · tflint · plan comment| Main[main]
+    Main -->|terraform apply<br/>approval: platform| TF[(Workspaces · lakehouses<br/>Spark settings · deployment pipeline<br/>prod schedule)]
+    Main -->|deploy| Dev[dev<br/>Git sync · publish env · run pl_medallion]
+    Dev -->|deployment pipeline| Test[test<br/>publish env · run pl_medallion]
+    Test -->|approval: prod| Prod[prod<br/>publish env · run pl_medallion]
+    Prod -.->|daily monitor| Issue[GitHub issue<br/>on failure]
 ```
 
-## Tech stack
+## What makes it production-grade
 
-| Area | Tools |
-|------|-------|
-| Platform | Microsoft Fabric (Lakehouse, Notebooks, Data Pipelines, Environments) |
-| Processing | PySpark 3.5 / Delta Lake |
-| Infrastructure as Code | Terraform (`microsoft/fabric` provider), HCP Terraform remote state |
-| CI/CD | GitHub Actions (OIDC, no secrets), Fabric Git integration, Fabric Deployment Pipelines |
-| Testing | pytest, chispa, rules-based data-quality framework |
+- **Infrastructure as code** — workspaces, lakehouses, Spark compute, role assignments, the deployment pipeline and the
+  prod schedule are Terraform (`microsoft/fabric`), with remote state in HCP Terraform, a plan comment on every PR and
+  an approval-gated apply.
+- **Tested transformation code** — all logic lives in the `divvy_medallion` package (`src/`), tested with local Spark +
+  Delta; notebooks are thin wrappers. The wheel ships *inside* the Fabric environment in Git, and CI proves it was built
+  from the committed source (byte-reproducible builds).
+- **Incremental and idempotent everywhere** — partitions are replaced, never appended twice; every layer tracks which
+  upstream batch it processed (watermarks), so re-runs are no-ops and a failed step is repaired by a plain retry.
+  Breaking schema changes go through an explicit, logged `rebuild=True`.
+- **Nothing is silently dropped** — Silver quarantines failing rows with reason codes; Bronze = Silver + quarantine,
+  row for row, checked on every run.
+- **Data-quality gate** — 45 checks (keys, uniqueness, accepted values, ranges, referential integrity, reconciliation
+  across all layers, quarantine rate, freshness) written to `dq_results`; any `error` check fails the pipeline and stops
+  promotion.
+- **Safe delivery** — `main` is protected (PR, green checks, resolved review threads); CD deploys only the commit it
+  built, publishes the environment (Fabric only *stages* it), runs the full pipeline per stage, and waits for a human
+  before prod.
+- **Operability** — weekly prod schedule, daily health monitor that opens and closes GitHub issues, run logs per layer.
+
+## What the gates caught
+
+Every one of these was found by a test, a check, a failed stage or a review before it could reach production.
+
+| Found by | Problem | Fix |
+|---|---|---|
+| Data-quality checks on real data | Divvy's monthly files overlap at the boundary (the September file holds 43 trips from 31 August), splitting a day into two aggregate rows | Aggregates keyed by the trip's own month, rebuilt from both files; aggregate-grain checks |
+| Reconciliation review | Superseded duplicate rides would have vanished between the Bronze and Silver counts | Superseded versions are quarantined as `duplicate_ride_id` |
+| Boundary tests | Second-precision durations let 59.9 s "false starts" through | Millisecond-precision durations; 173 trips correctly re-quarantined |
+| Deploy to test (prod skipped) | The Spark environment claimed 80 cores on a 16-core pool — dev had only passed because of portal drift | Right-sized environment; CI test that it fits the smallest Terraform pool |
+| Terraform apply | Starter pools with executors = nodes are accepted on create but rejected on update | `max_executors = nodes - 1`, with a guard test |
+| Code review | CD could have promoted a newer commit than the one approved; CI tokens could expire mid-run | Deploys pinned to `GITHUB_SHA`; fresh OIDC token per renewal |
+| actionlint (added after) | A workflow file that GitHub could not parse | Workflow linting in the required `ci` gate |
+
+## Results (production)
+
+![Divvy trips per day by rider type, with rainy days shaded](docs/charts/daily-trips.png)
+
+Joining weather into Gold explains the dips: the sharpest drops line up with days of 10 mm+ rain.
+
+![Why rows were quarantined](docs/charts/quarantine-reasons.png)
+
+| Period | Bronze rows | Silver `trips` | `trips_quarantine` | Gold `fact_trips` |
+|---|---:|---:|---:|---:|
+| 2026-08 | 868,191 | 846,575 | 21,616 (2.5%) | 846,575 |
+| 2026-09 | 770,562 | 751,283 | 19,279 (2.5%) | 751,283 |
+
+Charts are generated from the prod lakehouse with [`tools/ops_charts.py`](tools/ops_charts.py).
 
 ## Screenshots
 
-### Infrastructure as Code
+### Continuous deployment and orchestration
+
+![Deploy workflow: dev, test and prod all green](docs/screenshots/11-cd-dev-test-prod.webp)
+
+![pl_medallion orchestration pipeline](docs/screenshots/12-pl-medallion.webp)
+
+### Infrastructure as code
 
 | Terraform plan posted on every pull request | Apply gated by a manual approval |
 |---|---|
@@ -62,72 +124,52 @@ flowchart LR
 
 | `ci` runs on every pull request (required to merge) | Review findings must be fixed and resolved before `main` accepts the merge |
 |---|---|
-| ![ci workflow: ruff, pytest, Fabric item validation](docs/screenshots/05-ci-checks.webp) | ![Pull request merged after resolving review findings](docs/screenshots/06-pr-review-gate.webp) |
+| ![ci workflow](docs/screenshots/05-ci-checks.webp) | ![Pull request merged after resolving review findings](docs/screenshots/06-pr-review-gate.webp) |
 
-### Bronze layer
+### Layers
 
-| Idempotent monthly ingestion (770,562 trips = source row count) | Bronze tables + ingestion log in `lh_bronze` |
+| Bronze: idempotent monthly ingestion (770,562 trips = source rows) | Bronze tables + ingestion log |
 |---|---|
 | ![nb_bronze_divvy_trips run summary](docs/screenshots/07-bronze-divvy-run.webp) | ![lh_bronze tables](docs/screenshots/09-bronze-lakehouse-tables.webp) |
 
-### Silver layer
-
-`nb_silver_trips` types, validates and deduplicates every Bronze period. Failing rows are **quarantined with reason codes,
-never dropped** — valid + quarantined always equals the Bronze row count:
-
-| Period | Bronze rows | Silver `trips` | `trips_quarantine` |
-|---|---:|---:|---:|
-| 2026-08 | 868,191 | 846,575 | 21,616 (2.5%) |
-| 2026-09 | 770,562 | 751,283 | 19,279 (2.5%) |
-
-Quarantine reasons (both months): `duration_under_60s` 39,521 · `missing_end_coordinates` 1,327 ·
-`duration_over_24h` 1,303 · `coordinates_out_of_range` 10 — 1,266 rows fail more than one rule.
-
 ![nb_silver_trips run summary](docs/screenshots/10-silver-trips-run.webp)
 
-### Gold layer & data-quality gate
+## Tech stack
 
-Star schema in `lh_gold` (`fact_trips`, `dim_date`, `dim_station`, `dim_weather`) plus `agg_daily_kpis` and
-`agg_station_monthly`. `nb_dq_checks` runs **45 checks** per run (keys, uniqueness, accepted values, ranges,
-referential integrity, Bronze→Silver→Gold→aggregate reconciliation, quarantine rate, freshness), appends them to
-`dq_results` and **fails the pipeline on any `error` check**.
-
-The gate earned its keep on real data: Divvy's monthly files overlap at the boundary (the September file holds 43
-trips from 31 August), which split one day into two aggregate rows. Aggregates are now keyed by the trip's own month
-and an aggregate-grain check blocks any regression:
-
-| Trip month | Trips in `fact_trips` | `agg_daily_kpis` rows | Reconciled |
-|---|---:|---:|---|
-| 2026-07 (boundary spill-over) | 143 | 2 | ✅ |
-| 2026-08 | 846,475 | 62 (31 days × 2 rider types) | ✅ |
-| 2026-09 | 751,240 | 60 (30 days × 2 rider types) | ✅ |
-
-### Orchestration & continuous deployment
-
-`pl_medallion` runs Bronze (trips + weather in parallel) → Silver → Gold → the data-quality gate, with retries,
-timeouts and the pipeline run ID as lineage `batch_id`. Every step is incremental: a run for `202607-202609` after
-August and September were loaded ingested **only July**, then refreshed exactly the Gold months it affected.
-Prod runs it weekly (Terraform-managed schedule).
-
-![pl_medallion orchestration pipeline](docs/screenshots/12-pl-medallion.webp)
-
-Every merge to `main` deploys **dev → test → prod (manual approval)** with GitHub Actions — Git sync by the service
-principal, Fabric deployment pipeline, environment publish and a full `pl_medallion` run per stage. The DQ gate blocks
-promotion: on the first run it stopped at test (an oversized Spark environment) and prod was never touched.
-
-![Deploy workflow: dev, test and prod all green](docs/screenshots/11-cd-dev-test-prod.webp)
+| Area | Tools |
+|---|---|
+| Platform | Microsoft Fabric — Lakehouse, Notebooks, Data Pipelines, Environments, Deployment Pipelines, Git integration |
+| Processing | PySpark 3.5 / Delta Lake (Fabric Runtime 1.3), Python 3.11 package built with hatchling + uv |
+| Infrastructure as code | Terraform `microsoft/fabric`, HCP Terraform remote state, tflint |
+| CI/CD | GitHub Actions, OIDC → Entra service principal (no secrets), environments with required reviewers, actionlint |
+| Testing & quality | pytest, chispa, local Spark + Delta, rules-based data-quality suite, delta-rs for verification over OneLake |
 
 ## Repository layout
 
 ```
-.github/workflows/   ci (lint · tests · Fabric item validation), terraform (plan/apply), CD (Dev → Test → Prod)
-infra/terraform/     Workspaces, lakehouses, environments, role assignments, deployment pipeline
-fabric/              Fabric items synced through Git integration
-src/divvy_medallion/ PySpark transformations and data-quality rules (built as a wheel)
-tests/               Unit tests and data-quality tests
-tools/               Repo tooling (Fabric item validator used in CI)
-docs/                Plan, architecture and screenshots
+.github/workflows/   ci · terraform (plan/apply) · deploy (dev → test → prod) · monitor (daily health)
+infra/terraform/     Workspaces, lakehouses, Spark settings, roles, deployment pipeline, prod schedule
+fabric/              Fabric items in Git: lakehouses, env_divvy (with the package wheel), notebooks, pl_medallion
+src/divvy_medallion/ Bronze / Silver / Gold transformations, watermarks, data-quality rules and suite
+tests/               Unit tests (Spark + Delta), data-quality suite tests, CD tooling tests
+tools/               Fabric API CLI, environment publish, wheel sync, item validator, prod monitor, charts
+docs/                Plan, development workflow, screenshots, charts
 ```
+
+## Run it yourself
+
+You need a Fabric capacity (a trial works), an Entra app registration with GitHub OIDC federated credentials, and an
+HCP Terraform organization. Then:
+
+1. Set the repository variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `FABRIC_CAPACITY_ID`, …) and the
+   `TF_API_TOKEN` secret, and create the `platform`, `dev`, `test` and `prod` GitHub environments.
+2. Run the `terraform` workflow (apply with `prod_schedule_enabled = false` the first time) to create the workspaces,
+   lakehouses and deployment pipeline.
+3. Connect the dev workspace to this repository's `fabric/` folder, then run the `deploy` workflow.
+4. Re-apply Terraform with `prod_schedule_enabled = true`.
+
+The working conventions for contributors (and AI assistants) are in [CLAUDE.md](CLAUDE.md) and
+[docs/development-workflow.md](docs/development-workflow.md).
 
 ## License
 
