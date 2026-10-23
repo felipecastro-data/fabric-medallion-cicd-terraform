@@ -102,6 +102,15 @@ and an aggregate-grain check blocks any regression:
 | 2026-08 | 846,475 | 62 (31 days × 2 rider types) | ✅ |
 | 2026-09 | 751,240 | 60 (30 days × 2 rider types) | ✅ |
 
+### Orchestration & continuous deployment
+
+`pl_medallion` runs Bronze (trips + weather in parallel) → Silver → Gold → the data-quality gate, with retries,
+timeouts and the pipeline run ID as lineage `batch_id`. Every step is incremental: a run for `202607-202609` after
+August and September were loaded ingested **only July**, then refreshed exactly the Gold months it affected.
+
+Every merge to `main` deploys **dev → test → prod (manual approval)** with GitHub Actions: Git sync, Fabric deployment
+pipeline, environment publish and a full `pl_medallion` run per stage — the DQ gate blocks promotion.
+
 ## Repository layout
 
 ```

@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 API = "https://api.fabric.microsoft.com/v1"
@@ -88,14 +89,23 @@ def staged_wheels(api: Fabric, base: str) -> list[str]:
     return sorted(set(filter(None, names)))
 
 
-def wait_for_publish(api: Fabric, workspace_id: str, environment_id: str, timeout_s: int) -> str:
+def wait_for_publish(
+    api: Fabric, workspace_id: str, environment_id: str, timeout_s: int, target_version: str | None, requested_at: str
+) -> str:
+    """Wait for *this* publish: ignore the state of an older publish until ours shows up (by target version when
+    the API returned it, otherwise by a start time at or after the request)."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         _, _, env = api.request("GET", f"/workspaces/{workspace_id}/environments/{environment_id}")
         details = (env.get("properties") or {}).get("publishDetails") or {}
-        state = str(details.get("state", "unknown")).lower()
+        ours = (
+            details.get("targetVersion") == target_version
+            if target_version
+            else str(details.get("startTime", "")) >= requested_at
+        )
+        state = str(details.get("state", "unknown")).lower() if ours else "waiting for this publish"
         print(f"  publish state: {state}")
-        if state in TERMINAL_STATES:
+        if ours and state in TERMINAL_STATES:
             return state
         time.sleep(30)
     raise TimeoutError(f"Environment publish did not finish within {timeout_s}s")
@@ -136,8 +146,10 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     print("  publishing (this usually takes 3-10 minutes)")
-    api.request("POST", f"{base}/staging/publish?beta=false")
-    state = wait_for_publish(api, args.workspace_id, environment_id, args.timeout)
+    requested_at = (datetime.now(UTC) - timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%S")  # clock-skew margin
+    _, _, started = api.request("POST", f"{base}/staging/publish?beta=false")
+    target = ((started or {}).get("publishDetails") or {}).get("targetVersion")  # 200 response carries it
+    state = wait_for_publish(api, args.workspace_id, environment_id, args.timeout, target, requested_at)
     if state != "success":
         print(f"::error::Environment publish finished with state '{state}'")
         return 1

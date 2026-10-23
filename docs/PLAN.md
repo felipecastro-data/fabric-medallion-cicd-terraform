@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 6 of 8 — 78%**
+**Progress: Step 7 of 8 — 85%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -9,8 +9,8 @@
 | 3 | Git integration & branching — dev workspace ↔ `/fabric`, branch protection, PR template | ✅ Done |
 | 4 | Bronze — idempotent incremental ingestion (Divvy + Open-Meteo), watermark, metadata | ✅ Done |
 | 5 | Silver — `src/` PySpark package as wheel, cleansing, dedup, quarantine, station dim | ✅ Done |
-| 6 | Gold & data quality — star schema, aggregates, `dq_results`, pytest + chispa | 🟡 In progress |
-| 7 | Orchestration & CD — Data Pipeline, GitHub Actions CI/CD, Deployment Pipeline, approvals, smoke tests | ⬜ |
+| 6 | Gold & data quality — star schema, aggregates, `dq_results`, pytest + chispa | ✅ Done |
+| 7 | Orchestration & CD — Data Pipeline, GitHub Actions CI/CD, Deployment Pipeline, approvals, smoke tests | 🟡 In progress |
 | 8 | Observability & showcase — run log, DQ trends, failure alerts, README screenshots, LinkedIn post | ⬜ |
 
 ## Step 1 checklist
@@ -76,4 +76,17 @@
 - [x] Feature-workspace run 202608–202609 verified over OneLake: fact = Silver exactly; 35/35 error checks pass
 - [x] Found in Fabric: monthly files overlap at the boundary (143 + 43 trips) → aggregates keyed by trip month,
       rebuilt from files M and M+1, new aggregate-grain checks (a split day now blocks the pipeline)
-- [ ] PR merged; dev updated + `env_divvy` published
+- [x] PR #6 merged (review: rebuild generations, weather-aware aggregate refresh, upstream DQ scope); dev updated + `env_divvy` 0.3.2 published
+
+## Step 7 checklist
+
+- [x] `pl_medallion` Data Pipeline: Bronze trips/weather in parallel → Silver → Gold → DQ gate; `periods` parameter,
+      `batch_id = @pipeline().RunId`, 1 retry / 60 s, 2 h timeout; notebooks referenced by logical ID (portable)
+- [x] Incremental run 202607–202609 in a feature workspace: only July loaded, aggregates refreshed by the weather
+      watermark, July-31 weather gap closed, 48/48 error checks pass
+- [x] CI service principal uses the shared GitHub connection for Git sync (`ConfiguredConnection`, role User)
+- [x] `deploy.yml`: dev (Git sync) → test → prod (manual approval), each publishing `env_divvy`, setting the default
+      environment and running `pl_medallion` end to end
+- [x] Terraform owns compute sizing; the deploy workflow owns the default-environment binding (`ignore_changes`)
+- [ ] PR merged → first CD run green through prod
+- [ ] Prod schedule for `pl_medallion`

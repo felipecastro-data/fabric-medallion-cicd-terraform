@@ -43,3 +43,16 @@ flowchart LR
 | Force push / deletion | blocked |
 | Linear history | required |
 | Bypass | none |
+
+## Continuous deployment (`.github/workflows/deploy.yml`)
+
+Runs on every merge to `main` that touches `fabric/` (or manually with a `periods` input):
+
+| Stage | GitHub environment | What happens |
+|-------|--------------------|--------------|
+| dev | `dev` | service principal syncs the workspace from Git (shared GitHub connection), publishes `env_divvy`, ensures it is the default environment, runs `pl_medallion` |
+| test | `test` | deployment pipeline Development → Test, publish, default environment, run `pl_medallion` |
+| prod | `prod` (**manual approval**) | deployment pipeline Test → Production, publish, default environment, run `pl_medallion` |
+
+`pl_medallion` ends with `nb_dq_checks`; any failed `error` check fails the run and stops promotion to the next stage.
+All Fabric calls use GitHub OIDC → Entra service principal (`tools/fabric_ops.py`, `tools/publish_environment_library.py`).

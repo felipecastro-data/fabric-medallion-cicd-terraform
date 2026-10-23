@@ -54,4 +54,10 @@ resource "fabric_spark_workspace_settings" "this" {
       max_executors  = var.starter_pool_max_nodes
     }
   }
+
+  # Ownership split: Terraform owns compute sizing and logging; the deploy workflow owns the default environment
+  # binding (env_divvy only exists in a workspace after it has been deployed there), see tools/fabric_ops.py.
+  lifecycle {
+    ignore_changes = [environment]
+  }
 }
