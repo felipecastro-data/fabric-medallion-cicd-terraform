@@ -68,7 +68,7 @@ resource "fabric_item_job_scheduler" "prod_medallion_weekly" {
 
   workspace_id = module.workspace["prod"].workspace_id
   item_id      = data.fabric_data_pipeline.prod_medallion[0].id
-  job_type     = "Pipeline"
+  job_type     = "Execute" # the provider (v1.14) accepts only Execute for DataPipeline schedules
   enabled      = true
 
   configuration = {
