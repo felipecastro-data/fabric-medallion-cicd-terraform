@@ -1,0 +1,210 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "0d6af2e4-c922-4bf3-8288-65261de3e6b5",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "periods": {
+              "value": {
+                "value": "@pipeline().parameters.periods",
+                "type": "Expression"
+              },
+              "type": "string"
+            },
+            "batch_id": {
+              "value": {
+                "value": "@pipeline().RunId",
+                "type": "Expression"
+              },
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Bronze trips",
+        "dependsOn": []
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "a87371f8-45fc-4c8c-b593-e903336558ee",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "periods": {
+              "value": {
+                "value": "@pipeline().parameters.periods",
+                "type": "Expression"
+              },
+              "type": "string"
+            },
+            "batch_id": {
+              "value": {
+                "value": "@pipeline().RunId",
+                "type": "Expression"
+              },
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Bronze weather",
+        "dependsOn": []
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "b21206f0-1b54-4c6d-8b26-f901529916d2",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "periods": {
+              "value": {
+                "value": "@pipeline().parameters.periods",
+                "type": "Expression"
+              },
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Silver trips",
+        "dependsOn": [
+          {
+            "activity": "Bronze trips",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "0e6fcce3-624c-4997-9961-c06f447ca253",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "periods": {
+              "value": {
+                "value": "@pipeline().parameters.periods",
+                "type": "Expression"
+              },
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Silver weather",
+        "dependsOn": [
+          {
+            "activity": "Bronze weather",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "d5500517-88c1-48b1-b821-bc8cfa1cbca3",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "periods": {
+              "value": {
+                "value": "@pipeline().parameters.periods",
+                "type": "Expression"
+              },
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Gold build",
+        "dependsOn": [
+          {
+            "activity": "Silver trips",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "Silver weather",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "2711cc07-c64a-44e8-8262-c16373493e77",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "periods": {
+              "value": {
+                "value": "@pipeline().parameters.periods",
+                "type": "Expression"
+              },
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "DQ checks",
+        "dependsOn": [
+          {
+            "activity": "Gold build",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ],
+    "parameters": {
+      "periods": {
+        "type": "string",
+        "defaultValue": "last:12"
+      }
+    }
+  }
+}

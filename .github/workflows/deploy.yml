@@ -1,0 +1,102 @@
+name: deploy
+
+# main -> dev (Git sync) -> test (deployment pipeline) -> prod (deployment pipeline, manual approval).
+# Each stage: publish env_divvy (Git and deployments only stage it), ensure it is the workspace default, then run
+# pl_medallion end to end; the pipeline's last activity is nb_dq_checks, so a failed `error` check stops promotion.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fabric/**"
+      - ".github/workflows/deploy.yml"
+      - "tools/fabric_ops.py"
+      - "tools/publish_environment_library.py"
+      - "tools/fabric_auth.py"
+  workflow_dispatch:
+    inputs:
+      periods:
+        description: "pl_medallion periods for each stage's run (YYYYMM | YYYYMM-YYYYMM | last:N)"
+        default: "last:2"
+
+permissions:
+  id-token: write # GitHub OIDC -> Entra service principal (no stored secrets)
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  PERIODS: ${{ inputs.periods || 'last:2' }}
+  PIPELINE_ID: ${{ vars.FABRIC_DEPLOYMENT_PIPELINE_ID }}
+  # tools/fabric_auth.py exchanges a fresh GitHub OIDC token with Entra for every token renewal (long pipeline runs)
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+
+jobs:
+  dev:
+    name: dev — sync from Git, publish, run
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      WS: ${{ vars.FABRIC_WORKSPACE_ID_DEV }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Update dev workspace from Git
+        run: |
+          python tools/fabric_ops.py git-credentials "$WS" "${{ vars.FABRIC_GIT_CONNECTION_ID }}"
+          python tools/fabric_ops.py update "$WS" "$GITHUB_SHA"  # refuses any other branch head
+      - name: Publish env_divvy
+        run: python tools/publish_environment_library.py --workspace-id "$WS"
+      - name: Default environment
+        run: python tools/fabric_ops.py default-env "$WS" env_divvy
+      - name: Run pl_medallion (Bronze -> Silver -> Gold -> DQ gate)
+        run: python tools/fabric_ops.py run-pipeline "$WS" pl_medallion "{\"periods\": \"$PERIODS\"}"
+      - run: echo "✅ dev synced to \`${GITHUB_SHA::7}\`, env published, pl_medallion ($PERIODS) passed" >> "$GITHUB_STEP_SUMMARY"
+
+  test:
+    name: test — deploy, publish, run
+    needs: dev
+    runs-on: ubuntu-latest
+    environment: test
+    env:
+      WS: ${{ vars.FABRIC_WORKSPACE_ID_TEST }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Deploy Development -> Test
+        run: python tools/fabric_ops.py deploy "$PIPELINE_ID" Development Test "CD ${GITHUB_SHA::7} (run ${{ github.run_id }})"
+      - name: Publish env_divvy
+        run: python tools/publish_environment_library.py --workspace-id "$WS"
+      - name: Default environment
+        run: python tools/fabric_ops.py default-env "$WS" env_divvy
+      - name: Run pl_medallion (Bronze -> Silver -> Gold -> DQ gate)
+        run: python tools/fabric_ops.py run-pipeline "$WS" pl_medallion "{\"periods\": \"$PERIODS\"}"
+      - run: echo "✅ test deployed from dev, pl_medallion ($PERIODS) passed" >> "$GITHUB_STEP_SUMMARY"
+
+  prod:
+    name: prod — approve, deploy, publish, run
+    needs: test
+    runs-on: ubuntu-latest
+    environment: prod # requires manual approval
+    env:
+      WS: ${{ vars.FABRIC_WORKSPACE_ID_PROD }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Deploy Test -> Production
+        run: python tools/fabric_ops.py deploy "$PIPELINE_ID" Test Production "CD ${GITHUB_SHA::7} (run ${{ github.run_id }})"
+      - name: Publish env_divvy
+        run: python tools/publish_environment_library.py --workspace-id "$WS"
+      - name: Default environment
+        run: python tools/fabric_ops.py default-env "$WS" env_divvy
+      - name: Run pl_medallion (Bronze -> Silver -> Gold -> DQ gate)
+        run: python tools/fabric_ops.py run-pipeline "$WS" pl_medallion "{\"periods\": \"$PERIODS\"}"
+      - run: echo "✅ prod deployed from test, pl_medallion ($PERIODS) passed" >> "$GITHUB_STEP_SUMMARY"
