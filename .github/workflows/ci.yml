@@ -60,10 +60,20 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.1
       - run: uv run --no-project python tools/sync_environment_wheel.py --check
 
+  workflows:
+    name: lint workflows (actionlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
+
   ci:
     name: ci
     if: always()
-    needs: [lint, test, fabric-items, environment-wheel]
+    needs: [lint, test, fabric-items, environment-wheel, workflows]
     runs-on: ubuntu-latest
     steps:
       - name: All required jobs passed
