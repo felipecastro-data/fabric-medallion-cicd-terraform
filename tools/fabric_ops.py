@@ -1,6 +1,6 @@
 """Fabric CD operations via the REST API as the Azure CLI identity (user locally, service principal in CI).
 
-python tools/fabric_ops.py update <workspace-id>                         # Update from Git (remote wins)
+python tools/fabric_ops.py update <workspace-id> [<expected-commit>]     # Update from Git (remote wins)
 python tools/fabric_ops.py run <workspace-id> <notebook> '{"periods": "202609"}'  # RunNotebook job + poll
 python tools/fabric_ops.py run-pipeline <workspace-id> pl_medallion '{"periods": "202607-202609"}'  # Pipeline job
 python tools/fabric_ops.py git-credentials <workspace-id> <connection-id>   # SP Git access via shared connection
@@ -11,37 +11,22 @@ python tools/fabric_ops.py deploy <pipeline-id> Development Test "<note>"    # d
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 
+from fabric_auth import access_token  # fresh GitHub OIDC exchange in CI, az CLI locally
+
 API = "https://api.fabric.microsoft.com/v1"
 TERMINAL_JOB_STATES = ("Completed", "Failed", "Cancelled", "Deduped")
-
-
-def _token() -> str:
-    cmd = ["az", "account", "get-access-token", "--resource", "https://api.fabric.microsoft.com"]
-    return subprocess.check_output([*cmd, "--query", "accessToken", "-o", "tsv"], text=True).strip()
-
-
-_cached: tuple[str, float] | None = None
-
-
-def token() -> str:
-    """Azure CLI access token for Fabric, refreshed every 30 minutes (pipeline runs can outlive one token)."""
-    global _cached
-    if _cached is None or time.time() - _cached[1] > 1800:
-        _cached = (_token(), time.time())
-    return _cached[0]
 
 
 def req(method: str, url: str, body: dict | None = None) -> tuple[int, dict, dict | None]:
     url = url if url.startswith("http") else API + url
     data = json.dumps(body).encode() if body is not None else None
     for attempt in range(8):
-        headers = {"Authorization": f"Bearer {token()}", "Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {access_token()}", "Content-Type": "application/json"}
         request = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
@@ -67,21 +52,32 @@ def wait_lro(headers: dict, label: str) -> dict:
             raise SystemExit(json.dumps(state))
 
 
-def update_from_git(ws: str) -> None:
-    _, _, status = req("GET", f"/workspaces/{ws}/git/status")
-    if status["workspaceHead"] == status["remoteCommitHash"] and not status["changes"]:
-        print("  already up to date", status["remoteCommitHash"][:7])
+def update_from_git(ws: str, expected_commit: str | None = None) -> None:
+    """Update the workspace from its Git branch (remote wins).
+
+    With ``expected_commit`` (CD passes ``GITHUB_SHA``) the sync refuses to apply any other commit: if the branch head
+    moved on, a newer workflow run deploys it, and this run must not promote code its approval never covered.
+    """
+    _, _, st = req("GET", f"/workspaces/{ws}/git/status")
+    remote = st["remoteCommitHash"]
+    if expected_commit and remote != expected_commit:
+        raise SystemExit(
+            f"Branch head is {remote[:7]}, not this run's commit {expected_commit[:7]}: a newer commit reached the "
+            "branch; its own deploy run will promote it. Refusing to deploy a revision this run did not build."
+        )
+    if st["workspaceHead"] == remote and not st["changes"]:
+        print("  already up to date", remote[:7])
         return
     body = {
-        "workspaceHead": status["workspaceHead"],
-        "remoteCommitHash": status["remoteCommitHash"],
+        "workspaceHead": st["workspaceHead"],
+        "remoteCommitHash": remote,
         "conflictResolution": {"conflictResolutionType": "Workspace", "conflictResolutionPolicy": "PreferRemote"},
         "options": {"allowOverrideItems": True},
     }
-    code, headers, _ = req("POST", f"/workspaces/{ws}/git/updateFromGit", body)
-    if code == 202:
+    status, headers, _ = req("POST", f"/workspaces/{ws}/git/updateFromGit", body)
+    if status == 202:
         wait_lro(headers, "updateFromGit")
-    print("  updated to", status["remoteCommitHash"][:7])
+    print("  updated to", remote[:7])
 
 
 def _run_job(ws: str, name: str, item_type: str, job_type: str, execution_data: dict) -> dict:
@@ -146,7 +142,7 @@ def set_default_environment(ws: str, name: str) -> None:
 if __name__ == "__main__":
     command, workspace = sys.argv[1], sys.argv[2]
     if command == "update":
-        update_from_git(workspace)
+        update_from_git(workspace, sys.argv[3] if len(sys.argv) > 3 else None)
     elif command == "run":
         run_notebook(workspace, sys.argv[3], json.loads(sys.argv[4]) if len(sys.argv) > 4 else {})
     elif command == "run-pipeline":
