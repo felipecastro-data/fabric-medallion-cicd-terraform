@@ -53,3 +53,30 @@ resource "fabric_deployment_pipeline_role_assignment" "admin_user" {
     type = "User"
   }
 }
+
+# Weekly prod run of the orchestration pipeline. Divvy publishes each month a few days after it ends; every step is
+# incremental, so a weekly run picks up a new month within days and is a cheap no-op otherwise.
+data "fabric_data_pipeline" "prod_medallion" {
+  count = var.prod_schedule_enabled ? 1 : 0
+
+  workspace_id = module.workspace["prod"].workspace_id
+  display_name = "pl_medallion"
+}
+
+resource "fabric_item_job_scheduler" "prod_medallion_weekly" {
+  count = var.prod_schedule_enabled ? 1 : 0
+
+  workspace_id = module.workspace["prod"].workspace_id
+  item_id      = data.fabric_data_pipeline.prod_medallion[0].id
+  job_type     = "Pipeline"
+  enabled      = true
+
+  configuration = {
+    type               = "Weekly"
+    weekdays           = ["Monday"]
+    times              = ["06:00"]
+    local_time_zone_id = "Central Standard Time" # Chicago, where the data comes from
+    start_date_time    = "2026-10-26T00:00:00Z"
+    end_date_time      = "2027-12-31T00:00:00Z"
+  }
+}

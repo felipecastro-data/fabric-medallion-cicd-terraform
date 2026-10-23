@@ -107,9 +107,15 @@ and an aggregate-grain check blocks any regression:
 `pl_medallion` runs Bronze (trips + weather in parallel) → Silver → Gold → the data-quality gate, with retries,
 timeouts and the pipeline run ID as lineage `batch_id`. Every step is incremental: a run for `202607-202609` after
 August and September were loaded ingested **only July**, then refreshed exactly the Gold months it affected.
+Prod runs it weekly (Terraform-managed schedule).
 
-Every merge to `main` deploys **dev → test → prod (manual approval)** with GitHub Actions: Git sync, Fabric deployment
-pipeline, environment publish and a full `pl_medallion` run per stage — the DQ gate blocks promotion.
+![pl_medallion orchestration pipeline](docs/screenshots/12-pl-medallion.webp)
+
+Every merge to `main` deploys **dev → test → prod (manual approval)** with GitHub Actions — Git sync by the service
+principal, Fabric deployment pipeline, environment publish and a full `pl_medallion` run per stage. The DQ gate blocks
+promotion: on the first run it stopped at test (an oversized Spark environment) and prod was never touched.
+
+![Deploy workflow: dev, test and prod all green](docs/screenshots/11-cd-dev-test-prod.webp)
 
 ## Repository layout
 
