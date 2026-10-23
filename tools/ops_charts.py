@@ -39,15 +39,22 @@ def _style(ax, title: str, subtitle: str) -> None:
 
 def daily_trips(ws: str, out: Path) -> None:
     rows = open_table(ws, "lh_gold", "agg_daily_kpis").to_pyarrow_table(columns=["date_key", "member_type", "trips"])
-    series: dict[str, dict[datetime, int]] = {"member": {}, "casual": {}}
+    by_day: dict[str, dict[datetime, int]] = {"member": {}, "casual": {}}
     for r in rows.to_pylist():
-        day = datetime.strptime(str(r["date_key"]), "%Y%m%d")
-        if r["member_type"] in series and day >= datetime(2026, 8, 1):  # complete months only (no boundary spill-over)
-            series[r["member_type"]][day] = series[r["member_type"]].get(day, 0) + r["trips"]
+        if r["member_type"] in by_day:
+            day = datetime.strptime(str(r["date_key"]), "%Y%m%d")
+            by_day[r["member_type"]][day] = by_day[r["member_type"]].get(day, 0) + r["trips"]
+    # plot complete months only: boundary spill-over months hold a handful of trips from a single day
+    days_per_month = Counter((d.year, d.month) for d in set(by_day["member"]) | set(by_day["casual"]))
+    complete = {m for m, n in days_per_month.items() if n >= 28}
+    series = {k: {d: v for d, v in pts.items() if (d.year, d.month) in complete} for k, pts in by_day.items()}
+    plotted = sorted(set(series["member"]) | set(series["casual"]))
+    start, end = plotted[0], plotted[-1]
+    period = f"{start:%b}–{end:%b %Y}" if start.year == end.year else f"{start:%b %Y}–{end:%b %Y}"
 
     weather = open_table(ws, "lh_gold", "dim_weather").to_pyarrow_table(columns=["date_key", "precipitation_sum"])
-    wet = [datetime.strptime(str(r["date_key"]), "%Y%m%d") for r in weather.to_pylist()
-           if (r["precipitation_sum"] or 0) >= WET_DAY_MM and r["date_key"] >= 20260801]  # fmt: skip
+    wet = [d for r in weather.to_pylist() if (r["precipitation_sum"] or 0) >= WET_DAY_MM
+           and start <= (d := datetime.strptime(str(r["date_key"]), "%Y%m%d")) <= end]  # fmt: skip
 
     fig, ax = plt.subplots(figsize=(10, 4.2), dpi=160)
     fig.subplots_adjust(left=0.07, right=0.9, top=0.76, bottom=0.12)
@@ -70,7 +77,7 @@ def daily_trips(ws: str, out: Path) -> None:
     ax.legend(loc="lower left", bbox_to_anchor=(-0.01, 1.0), ncol=3, frameon=False, fontsize=9, labelcolor=TEXT_2)
     total = sum(sum(p.values()) for p in series.values())
     _style(ax, "Divvy trips per day by rider type",
-           f"lh_gold.agg_daily_kpis joined with dim_weather · Aug–Sep 2026 · {total:,} valid trips")  # fmt: skip
+           f"lh_gold.agg_daily_kpis joined with dim_weather · {period} · {total:,} valid trips")  # fmt: skip
     fig.savefig(out / "daily-trips.png")
     plt.close(fig)
 

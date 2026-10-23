@@ -16,7 +16,7 @@ OIDC federated with an Entra service principal.
 |---|---|
 | Environments | 3 Fabric workspaces (dev / test / prod), each with `lh_bronze` · `lh_silver` · `lh_gold` — all Terraform |
 | Data | ~2.5M raw trips, **1.6M valid trips** in prod, daily weather, 1,700 stations; every rejected row kept with reason codes |
-| Quality | **116 unit tests** (local Spark + Delta) · **45 data-quality checks** per pipeline run · pipeline fails on any `error` check |
+| Quality | **117 unit tests** (local Spark + Delta) · **45 data-quality checks** per pipeline run · pipeline fails on any `error` check |
 | Delivery | 11 reviewed pull requests · CD on every merge (dev → test → **prod with approval**) · weekly prod schedule · daily health monitor |
 
 ## Architecture

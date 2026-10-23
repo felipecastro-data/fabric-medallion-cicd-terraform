@@ -53,3 +53,19 @@ def test_never_run_and_missing_dq_fail():
 def test_report_shows_status_and_findings():
     text = report(evaluate([_run("Completed")], [_dq("warning")], NOW), "ws-1", NOW)
     assert text.startswith("## ⚠️ Production health: WARN") and "### Findings" in text
+
+
+def test_a_crashing_check_still_reports_fail(monkeypatch, tmp_path):
+    import fabric_ops
+    import monitor_prod
+
+    def broken_api(*args, **kwargs):
+        raise SystemExit("GET /workspaces/ws/items -> 503 Service Unavailable")
+
+    monkeypatch.setattr(fabric_ops, "req", broken_api)
+    output, out_file = tmp_path / "report.md", tmp_path / "github_output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out_file))
+
+    assert monitor_prod.main(["--workspace-id", "ws", "--report", str(output)]) == 0
+    assert "status=fail" in out_file.read_text()
+    assert "could not collect data" in output.read_text() and "503" in output.read_text()

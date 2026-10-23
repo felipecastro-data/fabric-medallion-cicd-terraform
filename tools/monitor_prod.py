@@ -100,27 +100,32 @@ def report(health: Health, workspace_id: str, now: datetime) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     import fabric_ops
-    import read_onelake
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--workspace-id", required=True)
     parser.add_argument("--report", default="health.md")
     args = parser.parse_args(argv)
 
-    _, _, items = fabric_ops.req("GET", f"/workspaces/{args.workspace_id}/items?type=DataPipeline")
-    pipeline = next((i["id"] for i in items["value"] if i["displayName"] == PIPELINE), None)
-    runs = []
-    if pipeline:
-        _, _, jobs = fabric_ops.req("GET", f"/workspaces/{args.workspace_id}/items/{pipeline}/jobs/instances")
-        runs = sorted(jobs.get("value", []), key=lambda j: j.get("startTimeUtc") or "", reverse=True)
-    try:
-        dq_rows = read_onelake.open_table(args.workspace_id, "lh_gold", "dq_results").to_pyarrow_table().to_pylist()
-    except Exception as exc:  # noqa: BLE001 - surfaced as a finding
-        print(f"could not read dq_results: {exc}", file=sys.stderr)
-        dq_rows = []
-
     now = datetime.now(UTC).replace(tzinfo=None)
-    health = evaluate(runs, dq_rows, now)
+    try:
+        _, _, items = fabric_ops.req("GET", f"/workspaces/{args.workspace_id}/items?type=DataPipeline")
+        pipeline = next((i["id"] for i in items["value"] if i["displayName"] == PIPELINE), None)
+        runs = []
+        if pipeline:
+            _, _, jobs = fabric_ops.req("GET", f"/workspaces/{args.workspace_id}/items/{pipeline}/jobs/instances")
+            runs = sorted(jobs.get("value", []), key=lambda j: j.get("startTimeUtc") or "", reverse=True)
+        try:
+            import read_onelake  # needs deltalake; an import failure is reported like any other read failure
+
+            table = read_onelake.open_table(args.workspace_id, "lh_gold", "dq_results")
+            dq_rows = table.to_pyarrow_table().to_pylist()
+        except Exception as exc:  # noqa: BLE001 - surfaced as a finding
+            print(f"could not read dq_results: {exc}", file=sys.stderr)
+            dq_rows = []
+        health = evaluate(runs, dq_rows, now)
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - "cannot even check" must alert too
+        health = Health()
+        health.flag("fail", f"Health check could not collect data: {str(exc)[:600]}")
     text = report(health, args.workspace_id, now)
     with open(args.report, "w", encoding="utf-8") as fh:
         fh.write(text)
