@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 7 of 8 — 85%**
+**Progress: Step 8 of 8 — 90%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -10,8 +10,8 @@
 | 4 | Bronze — idempotent incremental ingestion (Divvy + Open-Meteo), watermark, metadata | ✅ Done |
 | 5 | Silver — `src/` PySpark package as wheel, cleansing, dedup, quarantine, station dim | ✅ Done |
 | 6 | Gold & data quality — star schema, aggregates, `dq_results`, pytest + chispa | ✅ Done |
-| 7 | Orchestration & CD — Data Pipeline, GitHub Actions CI/CD, Deployment Pipeline, approvals, smoke tests | 🟡 In progress |
-| 8 | Observability & showcase — run log, DQ trends, failure alerts, README screenshots, LinkedIn post | ⬜ |
+| 7 | Orchestration & CD — Data Pipeline, GitHub Actions CI/CD, Deployment Pipeline, approvals, smoke tests | ✅ Done |
+| 8 | Observability & showcase — run log, DQ trends, failure alerts, README screenshots, LinkedIn post | 🟡 In progress |
 
 ## Step 1 checklist
 
@@ -88,5 +88,8 @@
 - [x] `deploy.yml`: dev (Git sync) → test → prod (manual approval), each publishing `env_divvy`, setting the default
       environment and running `pl_medallion` end to end
 - [x] Terraform owns compute sizing; the deploy workflow owns the default-environment binding (`ignore_changes`)
-- [ ] PR merged → first CD run green through prod
-- [ ] Prod schedule for `pl_medallion`
+- [x] PR #7 merged (review: SHA-pinned dev sync, fresh OIDC per token renewal, publish tracks its own version)
+- [x] First CD runs found and fixed: invalid workflow YAML (#8, + actionlint gate), environment larger than the
+      smallest pool (#9, + pool-fit test), starter pools with executors = nodes (#10, + guard) — prod skipped until green
+- [x] First full deploy green dev → test → prod (prod: 1,597,858 facts, 35/35 error checks); Terraform 0 drift
+- [x] Prod schedule for `pl_medallion`: weekly, Monday 06:00 Chicago (Terraform `fabric_item_job_scheduler`)

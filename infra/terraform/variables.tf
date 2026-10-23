@@ -58,3 +58,9 @@ variable "environments" {
     error_message = "Environment keys must be dev, test or prod."
   }
 }
+
+variable "prod_schedule_enabled" {
+  description = "Schedule pl_medallion in prod. The pipeline is created by the first deployment, so a fresh environment applies with false first, then true."
+  type        = bool
+  default     = true
+}
