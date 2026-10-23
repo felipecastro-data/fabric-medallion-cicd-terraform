@@ -1,0 +1,58 @@
+name: monitor
+
+# Daily production health check (tools/monitor_prod.py): latest pl_medallion run + latest data-quality run.
+# fail -> open (or update) a `prod-alert` issue and fail this job; ok/warn -> close an open alert issue.
+on:
+  schedule:
+    - cron: "0 14 * * *" # 14:00 UTC daily (the weekly prod run is Monday 06:00 Chicago)
+  workflow_dispatch:
+
+permissions:
+  id-token: write # GitHub OIDC -> Entra service principal
+  contents: read
+  issues: write
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+env:
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ALERT_LABEL: prod-alert
+
+jobs:
+  prod-health:
+    name: prod health
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.1
+      - name: Check production
+        id: health
+        run: |
+          uv run --no-project --python 3.11 --with deltalake --with pyarrow \
+            python tools/monitor_prod.py --workspace-id "${{ vars.FABRIC_WORKSPACE_ID_PROD }}" --report health.md
+          cat health.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Open, update or close the alert issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ steps.health.outputs.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf '\n[Monitor run](%s)\n' "$RUN_URL" >> health.md
+          open_issue=$(gh issue list --label "$ALERT_LABEL" --state open --json number --jq '.[0].number // empty')
+          if [ "$STATUS" = "fail" ]; then
+            if [ -n "$open_issue" ]; then
+              gh issue comment "$open_issue" --body-file health.md
+            else
+              gh label create "$ALERT_LABEL" --color B60205 --description "Production health alert" 2>/dev/null || true
+              gh issue create --title "Production pipeline unhealthy ($(date -u +%F))" --label "$ALERT_LABEL" --body-file health.md
+            fi
+          elif [ -n "$open_issue" ]; then
+            gh issue comment "$open_issue" --body "✅ Recovered: production is healthy again ($STATUS). $RUN_URL"
+            gh issue close "$open_issue"
+          fi
+      - name: Fail on unhealthy production
+        if: steps.health.outputs.status == 'fail'
+        run: exit 1

@@ -1,6 +1,6 @@
 # Project plan & progress
 
-**Progress: Step 8 of 8 — 90%**
+**Progress: Step 8 of 8 — 95%**
 
 | # | Step | Status |
 |---|------|--------|
@@ -93,3 +93,12 @@
       smallest pool (#9, + pool-fit test), starter pools with executors = nodes (#10, + guard) — prod skipped until green
 - [x] First full deploy green dev → test → prod (prod: 1,597,858 facts, 35/35 error checks); Terraform 0 drift
 - [x] Prod schedule for `pl_medallion`: weekly, Monday 06:00 Chicago (Terraform `fabric_item_job_scheduler`)
+
+## Step 8 checklist
+
+- [x] `monitor` workflow: daily prod health (latest `pl_medallion` run + latest DQ run) → opens/updates a
+      `prod-alert` GitHub issue on failure, closes it on recovery (`tools/monitor_prod.py`, unit-tested)
+- [x] Charts from the prod lakehouse (`tools/ops_charts.py`): daily trips with rainy days, quarantine reasons
+- [x] Final README: badges, architecture, what makes it production-grade, what the gates caught, results, run it yourself
+- [ ] LinkedIn post
+- [ ] Cleanup: delete the `divvy-medallion-feat-gold` workspace
