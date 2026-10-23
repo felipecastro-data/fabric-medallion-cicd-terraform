@@ -34,3 +34,10 @@ def test_environment_claim_fits_the_smallest_terraform_pool():
 
 def test_environment_runtime_matches_the_tested_spark_version():
     assert _compute()["runtime_version"] == "1.3"  # Spark 3.5 / Python 3.11, what CI tests against
+
+
+def test_terraform_starter_pools_leave_a_node_for_the_driver():
+    # Fabric accepts max_executors == max_node_count when a workspace is created but rejects it on every later update
+    # (SparkSettingsInvalidNumberExecutors), which broke the first apply that touched pool settings.
+    module = (ROOT / "infra" / "terraform" / "modules" / "fabric_workspace_stack" / "main.tf").read_text()
+    assert re.search(r"max_executors\s*=\s*var\.starter_pool_max_nodes\s*-\s*1", module)
