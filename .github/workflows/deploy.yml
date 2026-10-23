@@ -54,7 +54,8 @@ jobs:
       - name: Default environment
         run: python tools/fabric_ops.py default-env "$WS" env_divvy
       - name: Run pl_medallion (Bronze -> Silver -> Gold -> DQ gate)
-        run: python tools/fabric_ops.py run-pipeline "$WS" pl_medallion "{\"periods\": \"$PERIODS\"}"
+        run: |
+          python tools/fabric_ops.py run-pipeline "$WS" pl_medallion "{\"periods\": \"$PERIODS\"}"
       - run: echo "✅ dev synced to \`${GITHUB_SHA::7}\`, env published, pl_medallion ($PERIODS) passed" >> "$GITHUB_STEP_SUMMARY"
 
   test:
@@ -76,7 +77,8 @@ jobs:
       - name: Default environment
         run: python tools/fabric_ops.py default-env "$WS" env_divvy
       - name: Run pl_medallion (Bronze -> Silver -> Gold -> DQ gate)
-        run: python tools/fabric_ops.py run-pipeline "$WS" pl_medallion "{\"periods\": \"$PERIODS\"}"
+        run: |
+          python tools/fabric_ops.py run-pipeline "$WS" pl_medallion "{\"periods\": \"$PERIODS\"}"
       - run: echo "✅ test deployed from dev, pl_medallion ($PERIODS) passed" >> "$GITHUB_STEP_SUMMARY"
 
   prod:
@@ -98,5 +100,6 @@ jobs:
       - name: Default environment
         run: python tools/fabric_ops.py default-env "$WS" env_divvy
       - name: Run pl_medallion (Bronze -> Silver -> Gold -> DQ gate)
-        run: python tools/fabric_ops.py run-pipeline "$WS" pl_medallion "{\"periods\": \"$PERIODS\"}"
+        run: |
+          python tools/fabric_ops.py run-pipeline "$WS" pl_medallion "{\"periods\": \"$PERIODS\"}"
       - run: echo "✅ prod deployed from test, pl_medallion ($PERIODS) passed" >> "$GITHUB_STEP_SUMMARY"
