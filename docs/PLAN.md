@@ -104,3 +104,10 @@
       July-31 trips without weather, as expected; no alert issue)
 - [x] LinkedIn post drafted
 - [x] Cleanup: `divvy-medallion-feat-gold` workspace deleted
+
+## After completion
+
+- [x] 2026-11-02 weekly prod run failed: Divvy had not published `202610` yet (HTTP 404). Fixed in #16 — a 404 for
+      one of the last two complete months is logged `NOT_PUBLISHED` and retried; older months still fail
+- [x] 2026-11-04 automation paused (project complete): `monitor` runs on demand only, `prod_schedule_enabled = false`.
+      To resume: restore the monitor cron and apply Terraform with `prod_schedule_enabled = true`
