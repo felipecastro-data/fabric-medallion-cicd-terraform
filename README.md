@@ -193,7 +193,7 @@ tests/               Unit tests (Spark + Delta), data-quality suite tests, CD to
 tools/               Fabric API CLI, environment publish, wheel sync, item validator, prod monitor, charts
 docs/                Design, ADRs, plan, development workflow, screenshots, charts
 Makefile             make test · make check (what CI runs) · make wheel
-.devcontainer/       Python 3.11 + Java 17 + uv + Terraform, for Codespaces or VS Code
+.devcontainer/       Java 17 + uv (Python 3.11) + Terraform, for Codespaces or VS Code
 ```
 
 ## Run it yourself
