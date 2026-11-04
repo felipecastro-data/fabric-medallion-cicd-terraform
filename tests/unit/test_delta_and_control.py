@@ -42,6 +42,21 @@ def test_ingestion_log_tracks_successful_periods(spark, tmp_path):
     assert failed.error == "RuntimeError: download failed"
 
 
+def test_not_published_period_is_logged_but_not_loaded(spark, tmp_path):
+    path = str(tmp_path / "ingestion_log")
+    append_runs(
+        spark, path, [IngestionRun("divvy_trips", "202610", "b-1").not_published("202610 not found (HTTP 404)")]
+    )
+
+    assert succeeded_periods(spark, path, "divvy_trips") == set()  # retried on the next run
+    row = spark.read.format("delta").load(path).first()
+    assert (row.status, row.error, row.finished_at is not None) == (
+        "NOT_PUBLISHED",
+        "202610 not found (HTTP 404)",
+        True,
+    )
+
+
 def test_latest_succeeded_batches_and_processed_pairs(spark, tmp_path):
     import time
 

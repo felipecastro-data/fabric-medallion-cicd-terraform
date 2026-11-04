@@ -16,6 +16,7 @@
 # - `dbo.divvy_trips`: all columns as strings + lineage columns, partitioned by `_period`
 # - `dbo.ingestion_log`: one row per period and run (status, rows, error)
 # - **Idempotent:** a period is replaced, never appended twice; periods already loaded are skipped unless `force=True`
+# - **Publication lag:** a recent month whose file Divvy has not published yet is logged as `NOT_PUBLISHED` (not a failure) and retried on the next run
 # - Logic lives in the tested `divvy_medallion` package, shipped in the workspace environment `env_divvy`
 
 # PARAMETERS CELL ********************
@@ -94,6 +95,11 @@ for period in todo:
         overwrite_partition(df, target_path, PERIOD_COLUMN, period)
         written = spark.read.format("delta").load(target_path).filter(f"{PERIOD_COLUMN} = '{period}'").count()
         run.succeed(written, divvy.source_url(period))
+    except divvy.SourceNotFoundError as exc:
+        if divvy.within_publication_lag(period):
+            run.not_published(str(exc))  # not out yet: Silver/Gold only see SUCCEEDED periods
+        else:
+            run.fail(exc)  # an old month that disappeared from the source is a real failure
     except Exception as exc:  # record the failure and continue with the next period
         run.fail(exc)
     append_runs(spark, log_path, [run])
@@ -109,6 +115,7 @@ summary = {
     "requested": requested,
     "skipped": sorted(already_loaded & set(requested)),
     "succeeded": [r.period for r in runs if r.status == "SUCCEEDED"],
+    "not_published": [r.period for r in runs if r.status == "NOT_PUBLISHED"],
     "failed": [r.period for r in failed],
 }
 print(json.dumps(summary, indent=2))

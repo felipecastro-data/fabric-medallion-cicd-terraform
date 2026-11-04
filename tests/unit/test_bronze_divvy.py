@@ -75,3 +75,36 @@ def test_download_and_extract_ignores_macos_metadata(tmp_path, monkeypatch):
     assert zip_path.name == "202609-divvy-tripdata.zip"
     assert csv_path.name == "202609-divvy-tripdata.csv"
     assert csv_path.read_text() == FIXTURE.read_text()
+
+
+@pytest.mark.parametrize(
+    ("period", "expected"),
+    [("202610", True), ("202609", True), ("202608", False), ("202611", False), ("202510", False)],
+)
+def test_within_publication_lag(period, expected):
+    from datetime import date
+
+    assert divvy.within_publication_lag(period, today=date(2026, 11, 2)) is expected
+
+
+def test_download_404_raises_source_not_found(monkeypatch, tmp_path):
+    import urllib.error
+
+    def not_found(url, timeout):
+        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(divvy.urllib.request, "urlopen", not_found)
+    with pytest.raises(divvy.SourceNotFoundError, match="202610-divvy-tripdata.zip not found"):
+        divvy.download_and_extract("202610", tmp_path)
+
+
+def test_download_other_http_errors_propagate(monkeypatch, tmp_path):
+    import urllib.error
+
+    def forbidden(url, timeout):
+        raise urllib.error.HTTPError(url, 503, "Slow Down", {}, None)
+
+    monkeypatch.setattr(divvy.urllib.request, "urlopen", forbidden)
+    with pytest.raises(urllib.error.HTTPError) as info:
+        divvy.download_and_extract("202610", tmp_path)
+    assert not isinstance(info.value, divvy.SourceNotFoundError)
