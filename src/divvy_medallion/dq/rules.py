@@ -133,6 +133,22 @@ def foreign_key(child: DataFrame, column: str, parent: DataFrame, parent_column:
     return _offending(orphans, column, "orphan rows", "0 orphan rows")
 
 
+def no_rows(bad: DataFrame, column: str, what: str) -> Measurement:
+    """Pass when ``bad`` (rows violating an invariant) is empty; ``column`` identifies the offenders."""
+    return _offending(bad, column, what, f"0 {what}")
+
+
+def schema_matches(df: DataFrame, expected: dict[str, str]) -> Measurement:
+    """Column names and Spark types equal ``expected`` (name -> simpleString); column order is not compared."""
+    actual = {f.name: f.dataType.simpleString() for f in df.schema.fields}
+    missing = sorted(set(expected) - set(actual))
+    unexpected = sorted(set(actual) - set(expected))
+    retyped = sorted(f"{c}: {actual[c]} != {t}" for c, t in expected.items() if c in actual and actual[c] != t)
+    problems = len(missing) + len(unexpected) + len(retyped)
+    details = f"missing={missing} unexpected={unexpected} retyped={retyped}" if problems else None
+    return Measurement(problems == 0, f"{problems} schema differences", "0 schema differences", details=details)
+
+
 def row_count(actual: DataFrame, expected: int) -> Measurement:
     n = actual.count()
     return Measurement(n == expected, str(n), str(expected))

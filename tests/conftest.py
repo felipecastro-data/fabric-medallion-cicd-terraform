@@ -116,7 +116,9 @@ def medallion(spark):
         quarantine=quarantine,
         fact_trips=fact,
         dim_date=frozen(dimensions.build_dim_date(spark, date(2026, 1, 1), date(2026, 12, 31))),
-        dim_station=frozen(dimensions.build_dim_station(stations.build_stations(valid))),
+        dim_station=frozen(
+            dimensions.initial_dim_station(dimensions.build_dim_station(stations.build_stations(valid)))
+        ),
         dim_weather=dim_weather,
         daily_kpis=frozen(aggregates.build_daily_kpis(fact, dim_weather)),
         station_monthly=frozen(aggregates.build_station_monthly(fact)),
