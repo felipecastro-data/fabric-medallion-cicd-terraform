@@ -7,17 +7,22 @@ Scooters data license). All columns are kept as strings in Bronze; typing happen
 from __future__ import annotations
 
 import shutil
+import urllib.error
 import urllib.request
 import zipfile
+from datetime import date
 from pathlib import Path
 
 from pyspark.sql import DataFrame, SparkSession
 
-from divvy_medallion.periods import validate_period
+from divvy_medallion.periods import add_months, validate_period
 
 SOURCE = "divvy_trips"
 BRONZE_TABLE = "divvy_trips"
 BASE_URL = "https://divvy-tripdata.s3.amazonaws.com"
+# Divvy publishes a month's file some days to weeks after it ends: a missing file for one of the last
+# PUBLICATION_LAG_MONTHS complete months is "not published yet", not an error.
+PUBLICATION_LAG_MONTHS = 2
 
 COLUMNS: tuple[str, ...] = (
     "ride_id",
@@ -40,6 +45,17 @@ class SchemaDriftError(ValueError):
     """The source file header no longer matches the expected Divvy schema."""
 
 
+class SourceNotFoundError(FileNotFoundError):
+    """The monthly file does not exist (HTTP 404) at the source."""
+
+
+def within_publication_lag(period: str, today: date | None = None) -> bool:
+    """True for the most recent complete months, whose file may legitimately not be published yet."""
+    today = today or date.today()
+    current = f"{today.year:04d}{today.month:02d}"
+    return add_months(current, -PUBLICATION_LAG_MONTHS) <= validate_period(period) < current
+
+
 def file_name(period: str) -> str:
     return f"{validate_period(period)}-divvy-tripdata.zip"
 
@@ -51,11 +67,17 @@ def source_url(period: str) -> str:
 def download_and_extract(period: str, work_dir: Path, timeout: int = 300) -> tuple[Path, Path]:
     """Download the monthly zip and extract its CSV (ignoring macOS ``__MACOSX`` entries).
 
-    Returns ``(zip_path, csv_path)``.
+    Returns ``(zip_path, csv_path)``. Raises ``SourceNotFoundError`` when the file does not exist (HTTP 404).
     """
     work_dir.mkdir(parents=True, exist_ok=True)
     zip_path = work_dir / file_name(period)
-    with urllib.request.urlopen(source_url(period), timeout=timeout) as response, zip_path.open("wb") as out:  # noqa: S310 - fixed https host
+    try:
+        response = urllib.request.urlopen(source_url(period), timeout=timeout)  # noqa: S310 - fixed https host
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise SourceNotFoundError(f"{source_url(period)} not found (HTTP 404)") from exc
+        raise
+    with response, zip_path.open("wb") as out:
         shutil.copyfileobj(response, out)
 
     with zipfile.ZipFile(zip_path) as archive:

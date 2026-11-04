@@ -47,6 +47,12 @@ class IngestionRun:
         self.finished_at = datetime.now(UTC).replace(tzinfo=None)
         return self
 
+    def not_published(self, reason: str) -> IngestionRun:
+        """The source has not published this period yet: logged, not a failure, retried on the next run."""
+        self.status, self.error = "NOT_PUBLISHED", reason[:2000]
+        self.finished_at = datetime.now(UTC).replace(tzinfo=None)
+        return self
+
     def fail(self, error: BaseException) -> IngestionRun:
         self.status, self.error = "FAILED", f"{type(error).__name__}: {error}"[:2000]
         self.finished_at = datetime.now(UTC).replace(tzinfo=None)
