@@ -104,3 +104,6 @@
       July-31 trips without weather, as expected; no alert issue)
 - [x] LinkedIn post drafted
 - [x] Cleanup: `divvy-medallion-feat-gold` workspace deleted
+- [x] Portfolio review follow-ups: ADRs 0001–0003, `docs/design.md`, `Makefile` + devcontainer, 12-month results and
+      runtimes in the README (#18); `dim_station` SCD2 + `silver.trips` data contract enforced by the DQ gate,
+      ADR 0004 (#19)
