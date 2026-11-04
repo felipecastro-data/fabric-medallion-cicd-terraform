@@ -1,0 +1,31 @@
+name: devcontainer
+
+# Proves the one-command setup: builds .devcontainer/ (as Codespaces would) and runs `make check` inside it.
+# Not part of the required `ci` gate; runs when the container definition or its inputs change.
+on:
+  pull_request:
+    paths:
+      - ".devcontainer/**"
+      - "Makefile"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/devcontainer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devcontainer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  make-check:
+    name: make check in the devcontainer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: make check
