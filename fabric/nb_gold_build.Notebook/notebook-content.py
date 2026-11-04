@@ -12,7 +12,7 @@
 # MARKDOWN ********************
 
 # ## Gold · Star schema & aggregates
-# - Dimensions (full rebuild when their Silver input changed): `dim_date` (calendar + US holidays), `dim_station` (+ dockless member, key -1), `dim_weather` (by `date_key`)
+# - Dimensions: `dim_date` (calendar + US holidays) and `dim_weather` (by `date_key`) are rebuilt when their input changed; `dim_station` keeps history (**SCD2**: Delta MERGE of the Silver `stations` snapshot, `valid_from`/`valid_to`/`is_current`, durable `station_key` + dockless member -1)
 # - Facts per period: `fact_trips` from `lh_silver.dbo.trips`, then `agg_daily_kpis` (day x member type, with weather) and `agg_station_monthly` (starts, ends, net flow)
 # - Surrogate keys are deterministic (`yyyyMMdd`, hash of `station_id`): facts never need re-keying when a dimension is rebuilt
 # - **Incremental:** a period is rebuilt only when Silver trips *or* weather has a newer batch for it (watermark in `lh_gold.dbo.processing_log`)
@@ -130,16 +130,29 @@ if ("ALL", date_range) not in processed_batches(spark, log_path, "gold.dim_date"
         "gold.dim_date", date_range,
         lambda: dimensions.build_dim_date(spark, DIM_DATE_START, DIM_DATE_END), dimensions.DIM_DATE_TABLE,
     ))
-# station and weather dimensions follow their Silver input (own watermark, so a failed build is retried)
-for source, upstream_source, build, table in (
-    ("gold.dim_station", SILVER_STATIONS,
-     lambda: dimensions.build_dim_station(read(silver.table(stations.STATIONS_TABLE))), dimensions.DIM_STATION_TABLE),
-    ("gold.dim_weather", SILVER_WEATHER,
-     lambda: dimensions.build_dim_weather(read(silver.table(silver_weather.SILVER_TABLE))), dimensions.DIM_WEATHER_TABLE),
-):
-    changed_at = last_success(spark, silver_log, upstream_source)
-    if needs_rebuild(changed_at, last_success(spark, log_path, source)):
-        runs.append(build_dimension(source, f"{upstream_source}@{changed_at.isoformat()}", build, table))
+# weather follows its Silver input (own watermark, so a failed build is retried)
+changed_at = last_success(spark, silver_log, SILVER_WEATHER)
+if needs_rebuild(changed_at, last_success(spark, log_path, "gold.dim_weather")):
+    runs.append(build_dimension(
+        "gold.dim_weather", f"{SILVER_WEATHER}@{changed_at.isoformat()}",
+        lambda: dimensions.build_dim_weather(read(silver.table(silver_weather.SILVER_TABLE))),
+        dimensions.DIM_WEATHER_TABLE,
+    ))
+# station history (SCD2): MERGE the Silver snapshot when it changed; a missing or type 1 table is initialised once
+station_path = gold.table(dimensions.DIM_STATION_TABLE)
+changed_at = last_success(spark, silver_log, SILVER_STATIONS)
+if (needs_rebuild(changed_at, last_success(spark, log_path, "gold.dim_station"))
+        or dimensions.needs_scd2_migration(spark, station_path)):
+    run = IngestionRun("gold.dim_station", "ALL", f"{SILVER_STATIONS}@{changed_at.isoformat() if changed_at else '-'}")
+    try:
+        snapshot = dimensions.build_dim_station(read(silver.table(stations.STATIONS_TABLE)))
+        changes = dimensions.merge_dim_station(spark, snapshot, station_path, effective_at=run.started_at)
+        print(f"dim_station SCD2 changes: {changes or 'none'}")
+        run.succeed(read(station_path).count())
+    except Exception as exc:
+        run.fail(exc)
+    append_runs(spark, log_path, [run])
+    runs.append(run)
 
 # METADATA ********************
 

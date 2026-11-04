@@ -1,0 +1,46 @@
+# Data contract for lh_silver.dbo.trips: the interface Gold (and any other consumer) builds on.
+# Enforced on every pipeline run by the data-quality gate (divvy_medallion.dq.suite.contract_checks):
+# a schema change, a null in a required column or a duplicate key fails the run before promotion.
+# Changing this file is a versioned, reviewed change: bump `version` (major = breaking for consumers).
+dataset: lh_silver.dbo.trips
+version: 1.0.0
+owner: data-engineering
+contact: https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/issues
+description: >-
+  One row per valid Divvy trip: typed, deduplicated on ride_id (latest ingestion wins), quality rules applied.
+  Rows failing a rule are in lh_silver.dbo.trips_quarantine with reason codes, so Bronze = trips + quarantine.
+consumers:
+  - lh_gold.dbo.fact_trips
+  - lh_silver.dbo.stations
+partitioned_by: _period
+# Divvy re-publishes a few rides in a later month's file, so the key is unique within a period.
+primary_key: [_period, ride_id]
+freshness:
+  # Divvy publishes each month a few weeks after it ends; the newest period must be at most this many months old.
+  max_lag_months: 2
+  severity: warn
+schema:
+  - { name: ride_id, type: string, required: true }
+  - { name: rideable_type, type: string, required: true, accepted_values: [classic_bike, electric_bike, electric_scooter] }
+  - { name: member_type, type: string, required: true, accepted_values: [member, casual] }
+  - { name: started_at, type: timestamp, required: true }
+  - { name: ended_at, type: timestamp, required: true }
+  - { name: trip_date, type: date, required: true }
+  - { name: start_hour, type: int, required: true }
+  - { name: day_of_week, type: string, required: true }
+  - { name: duration_s, type: double, required: true }
+  - { name: start_station_id, type: string, required: false }  # null = dockless start
+  - { name: start_station_name, type: string, required: false }
+  - { name: end_station_id, type: string, required: false }  # null = dockless end
+  - { name: end_station_name, type: string, required: false }
+  - { name: start_lat, type: double, required: false }
+  - { name: start_lng, type: double, required: false }
+  - { name: end_lat, type: double, required: true }
+  - { name: end_lng, type: double, required: true }
+  - { name: distance_km, type: double, required: false }
+  - { name: is_round_trip, type: boolean, required: false }
+  - { name: is_dockless, type: boolean, required: false }
+  - { name: _source_file, type: string, required: true }
+  - { name: _batch_id, type: string, required: true }
+  - { name: _ingested_at, type: timestamp, required: true }
+  - { name: _period, type: string, required: true }
