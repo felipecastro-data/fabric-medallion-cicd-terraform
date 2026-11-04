@@ -15,9 +15,10 @@ OIDC federated with an Entra service principal.
 | At a glance | |
 |---|---|
 | Environments | 3 Fabric workspaces (dev / test / prod), each with `lh_bronze` · `lh_silver` · `lh_gold` — all Terraform |
-| Data | ~2.5M raw trips, **1.6M valid trips** in prod, daily weather, 1,700 stations; every rejected row kept with reason codes |
-| Quality | **117 unit tests** (local Spark + Delta) · **45 data-quality checks** per pipeline run · pipeline fails on any `error` check |
-| Delivery | 12 reviewed pull requests · CD on every merge (dev → test → **prod with approval**) · weekly prod schedule · daily health monitor |
+| Data | 12 months of Divvy: **6.17M raw trips → 6.01M valid trips** in prod, daily weather, 2,027 stations; every rejected row kept with reason codes |
+| Runtime | Prod `pl_medallion`: **26 min** to load two new months, **47 min** for a 10-month backfill, 18 min when nothing changed |
+| Quality | **125 unit tests** (local Spark + Delta) · **45 data-quality checks** per pipeline run · pipeline fails on any `error` check |
+| Delivery | every change through a reviewed pull request · CD on every merge (dev → test → **prod with approval**) · weekly prod schedule · daily health monitor |
 
 ## Architecture
 
@@ -92,15 +93,52 @@ Every one of these was found by a test, a check, a failed stage or a review befo
 ![Divvy trips per day by rider type, with rainy days shaded](docs/charts/daily-trips.png)
 
 Joining weather into Gold explains the dips: the sharpest drops line up with days of 10 mm+ rain.
+The chart plots complete months only: the October 2025 file also holds 58 trips from 30 September, which is
+why it shows 6,006,843 trips instead of 6,006,901. Those trips are also the expected `weather_coverage` warning.
 
 ![Why rows were quarantined](docs/charts/quarantine-reasons.png)
 
+Row counts per layer in prod (2026-11-04). Every Bronze row is either a valid Silver trip or a quarantined row, and
+the data-quality gate checks that on every run.
+
 | Period | Bronze rows | Silver `trips` | `trips_quarantine` | Gold `fact_trips` |
 |---|---:|---:|---:|---:|
+| 2025-10 | 646,039 | 628,409 | 17,630 (2.7%) | 628,409 |
+| 2025-11 | 356,628 | 346,698 | 9,930 (2.8%) | 346,698 |
+| 2025-12 | 140,534 | 136,447 | 4,087 (2.9%) | 136,447 |
+| 2026-01 | 137,787 | 133,738 | 4,049 (2.9%) | 133,738 |
+| 2026-02 | 201,450 | 197,296 | 4,154 (2.1%) | 197,296 |
+| 2026-03 | 317,037 | 308,458 | 8,579 (2.7%) | 308,458 |
+| 2026-04 | 448,252 | 435,456 | 12,796 (2.9%) | 435,456 |
+| 2026-05 | 653,704 | 635,321 | 18,383 (2.8%) | 635,321 |
+| 2026-06 | 762,550 | 741,316 | 21,234 (2.8%) | 741,316 |
+| 2026-07 | 869,051 | 845,904 | 23,147 (2.7%) | 845,904 |
 | 2026-08 | 868,191 | 846,575 | 21,616 (2.5%) | 846,575 |
 | 2026-09 | 770,562 | 751,283 | 19,279 (2.5%) | 751,283 |
+| **Total** | **6,171,785** | **6,006,901** | **164,884 (2.7%)** | **6,006,901** |
+
+Runtimes of `pl_medallion` in prod, from the Fabric run history (starter pool, up to 3 executors):
+
+| Run | Work | Total | Bronze trips | Silver trips | Gold | DQ gate |
+|---|---|---:|---:|---:|---:|---:|
+| 2026-10-23 | first load, 2 months | 26 min | 4.5 min | 10.2 min | 5.2 min | 5.8 min |
+| 2026-10-26 (weekly schedule) | backfill, 10 months | 47 min | 7.9 min | 21.8 min | 9.2 min | 7.7 min |
+| 2026-10-23 | nothing new (re-run) | 18 min | 4.0 min | 4.2 min | 3.7 min | 5.2 min |
+
+About 4 minutes of every notebook is Spark session start-up. Sizing, cost per run and what changes at 10× are in
+[docs/design.md](docs/design.md).
 
 Charts are generated from the prod lakehouse with [`tools/ops_charts.py`](tools/ops_charts.py).
+
+## Architecture decisions
+
+| ADR | Decision | Rejected alternatives |
+|---|---|---|
+| [0001](docs/adr/0001-terraform-plus-fabric-deployment-pipelines.md) | Terraform for the platform, Fabric deployment pipelines for promotion | Terraform for items, `fabric-cicd`, Git per workspace |
+| [0002](docs/adr/0002-control-table-watermarks-vs-delta-cdf.md) | Control-table watermarks per period | Delta Change Data Feed, streaming checkpoints, timestamp high-water mark |
+| [0003](docs/adr/0003-package-wheel-inside-the-fabric-environment.md) | Tested package, wheel committed inside the Fabric environment | Logic in notebooks, package feed, `%pip install` from Git |
+
+Scalability, cost, governance and security are covered in [docs/design.md](docs/design.md).
 
 ## Screenshots
 
@@ -153,10 +191,24 @@ fabric/              Fabric items in Git: lakehouses, env_divvy (with the packag
 src/divvy_medallion/ Bronze / Silver / Gold transformations, watermarks, data-quality rules and suite
 tests/               Unit tests (Spark + Delta), data-quality suite tests, CD tooling tests
 tools/               Fabric API CLI, environment publish, wheel sync, item validator, prod monitor, charts
-docs/                Plan, development workflow, screenshots, charts
+docs/                Design, ADRs, plan, development workflow, screenshots, charts
+Makefile             make test · make check (what CI runs) · make wheel
+.devcontainer/       Java 17 + uv (Python 3.11) + Terraform, for Codespaces or VS Code
 ```
 
 ## Run it yourself
+
+### Locally: tests in one command
+
+```bash
+make check   # uv sync --locked, ruff, 125 Spark + Delta unit tests, Fabric item validation, wheel check
+```
+
+Needs [uv](https://docs.astral.sh/uv/) and **Java 17** (PySpark). On macOS: `brew install uv openjdk@17` (the Makefile
+finds Homebrew's JDK). Or open the repo in a **Codespace / devcontainer**: Python 3.11, Java 17, uv, Terraform and the
+Azure and GitHub CLIs are preinstalled, and `make setup` runs on create.
+
+### In Fabric
 
 You need a Fabric capacity (a trial works), an Entra app registration with GitHub OIDC federated credentials, and an
 HCP Terraform organization. Then:

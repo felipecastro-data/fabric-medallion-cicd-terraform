@@ -57,7 +57,7 @@ def daily_trips(ws: str, out: Path) -> None:
            and start <= (d := datetime.strptime(str(r["date_key"]), "%Y%m%d")) <= end]  # fmt: skip
 
     fig, ax = plt.subplots(figsize=(10, 4.2), dpi=160)
-    fig.subplots_adjust(left=0.07, right=0.9, top=0.76, bottom=0.12)
+    fig.subplots_adjust(left=0.07, right=0.9, top=0.76, bottom=0.15)
     for i, day in enumerate(wet):  # the weather join in Gold explains the dips
         ax.axvspan(day - timedelta(hours=12), day + timedelta(hours=12), color=WET, linewidth=0,
                    label=f"rain ≥ {WET_DAY_MM:.0f} mm" if i == 0 else None)  # fmt: skip
@@ -72,8 +72,12 @@ def daily_trips(ws: str, out: Path) -> None:
     ax.set_ylim(bottom=0)
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(5000))
     ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v / 1000:.0f}k" if v else "0"))
-    ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    if (end - start).days > 120:  # a year of data: one tick per month
+        ax.xaxis.set_major_locator(mdates.MonthLocator())
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b\n%Y"))
+    else:  # a few months: weekly ticks
+        ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
     ax.legend(loc="lower left", bbox_to_anchor=(-0.01, 1.0), ncol=3, frameon=False, fontsize=9, labelcolor=TEXT_2)
     total = sum(sum(p.values()) for p in series.values())
     _style(ax, "Divvy trips per day by rider type",
