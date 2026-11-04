@@ -17,7 +17,7 @@ OIDC federated with an Entra service principal.
 | Environments | 3 Fabric workspaces (dev / test / prod), each with `lh_bronze` · `lh_silver` · `lh_gold` — all Terraform |
 | Data | 12 months of Divvy: **6.17M raw trips → 6.01M valid trips** in prod, daily weather, 2,027 stations; every rejected row kept with reason codes |
 | Runtime | Prod `pl_medallion`: **26 min** to load two new months, **47 min** for a 10-month backfill, 18 min when nothing changed |
-| Quality | **125 unit tests** (local Spark + Delta) · **45 data-quality checks** per pipeline run · pipeline fails on any `error` check |
+| Quality | **142 unit tests** (local Spark + Delta) · **58 data-quality checks** per two-month run, including a [data contract](src/divvy_medallion/contracts/silver_trips.yml) and SCD2 invariants · pipeline fails on any `error` check |
 | Delivery | every change through a reviewed pull request · CD on every merge (dev → test → **prod with approval**) · weekly prod schedule · daily health monitor |
 
 ## Architecture
@@ -32,7 +32,7 @@ flowchart LR
         direction LR
         B[(lh_bronze<br/>raw Delta + ingestion_log)]
         SV[(lh_silver<br/>typed · deduped<br/>trips_quarantine · stations)]
-        G[(lh_gold<br/>star schema · daily KPIs<br/>dq_results)]
+        G[(lh_gold<br/>star schema · SCD2 stations<br/>daily KPIs · dq_results)]
         P{{pl_medallion<br/>Bronze → Silver → Gold → DQ gate}}
         E[[env_divvy<br/>Spark env + package wheel]]
     end
@@ -66,9 +66,15 @@ flowchart LR
   Breaking schema changes go through an explicit, logged `rebuild=True`.
 - **Nothing is silently dropped** — Silver quarantines failing rows with reason codes; Bronze = Silver + quarantine,
   row for row, checked on every run.
-- **Data-quality gate** — 45 checks (keys, uniqueness, accepted values, ranges, referential integrity, reconciliation
-  across all layers, quarantine rate, freshness) written to `dq_results`; any `error` check fails the pipeline and stops
-  promotion.
+- **Data contract** — [`silver_trips.yml`](src/divvy_medallion/contracts/silver_trips.yml) states the schema,
+  required columns, key, accepted values, owner and freshness SLA of Silver `trips`. It ships in the wheel and is
+  enforced on every run, so a schema change fails the pipeline before Gold or a consumer sees it.
+- **History where it matters** — `dim_station` is SCD2 (Delta MERGE of snapshot diffs: renames and relocations open
+  a new version). Facts keep a durable key, so history never forces a fact rebuild
+  ([ADR 0004](docs/adr/0004-dim-station-scd2-by-snapshot-diff.md)).
+- **Data-quality gate** — 58 checks for a two-month run (keys, uniqueness, accepted values, ranges, referential
+  integrity, reconciliation across all layers, contract, SCD2 intervals, quarantine rate, freshness), written to
+  `dq_results`. Any `error` check fails the pipeline and stops promotion.
 - **Safe delivery** — `main` is protected (PR, green checks, resolved review threads); CD deploys only the commit it
   built, publishes the environment (Fabric only *stages* it), runs the full pipeline per stage, and waits for a human
   before prod.
@@ -137,6 +143,7 @@ Charts are generated from the prod lakehouse with [`tools/ops_charts.py`](tools/
 | [0001](docs/adr/0001-terraform-plus-fabric-deployment-pipelines.md) | Terraform for the platform, Fabric deployment pipelines for promotion | Terraform for items, `fabric-cicd`, Git per workspace |
 | [0002](docs/adr/0002-control-table-watermarks-vs-delta-cdf.md) | Control-table watermarks per period | Delta Change Data Feed, streaming checkpoints, timestamp high-water mark |
 | [0003](docs/adr/0003-package-wheel-inside-the-fabric-environment.md) | Tested package, wheel committed inside the Fabric environment | Logic in notebooks, package feed, `%pip install` from Git |
+| [0004](docs/adr/0004-dim-station-scd2-by-snapshot-diff.md) | `dim_station` SCD2 by snapshot diff, durable key in the fact | Type 1 rebuild, version key in the fact, versions dated from trip events |
 
 Scalability, cost, governance and security are covered in [docs/design.md](docs/design.md).
 
@@ -201,7 +208,7 @@ Makefile             make test · make check (what CI runs) · make wheel
 ### Locally: tests in one command
 
 ```bash
-make check   # uv sync --locked, ruff, 125 Spark + Delta unit tests, Fabric item validation, wheel check
+make check   # uv sync --locked, ruff, 142 Spark + Delta unit tests, Fabric item validation, wheel check
 ```
 
 Needs [uv](https://docs.astral.sh/uv/) and **Java 17** (PySpark). On macOS: `brew install uv openjdk@17` (the Makefile

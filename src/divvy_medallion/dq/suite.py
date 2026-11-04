@@ -11,11 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql import functions as F
 from pyspark.sql.types import BooleanType, LongType, StringType, StructField, StructType, TimestampType
 
+from divvy_medallion import contracts
 from divvy_medallion.bronze import PERIOD_COLUMN
+from divvy_medallion.contracts import DataContract
 from divvy_medallion.dq import rules
 from divvy_medallion.dq.rules import ERROR, WARN, Check, CheckResult
 from divvy_medallion.gold import DOCKLESS_STATION_KEY
@@ -53,15 +55,73 @@ def _sum(df: DataFrame, column: str) -> int:
     return df.agg(F.coalesce(F.sum(column), F.lit(0))).first()[0]
 
 
-def table_checks(t: Tables, *, latest_bronze_period: str | None, gold_built_at: datetime | None,
-                 today: date, now: datetime) -> list[Check]:  # fmt: skip
-    min_period = add_months(f"{today:%Y%m}", -MAX_SOURCE_LAG_MONTHS)
+def _current(dim: DataFrame) -> DataFrame:
+    return dim.filter(F.col("is_current"))
+
+
+def scd2_overlaps(dim: DataFrame, key: str = "station_key") -> DataFrame:
+    """Versions that do not start exactly where the previous version of the same key ended (gaps or overlaps),
+    plus empty or inverted intervals."""
+    prev_end = F.lag("valid_to").over(Window.partitionBy(key).orderBy("valid_from"))
+    with_prev = dim.withColumn("_prev_end", prev_end)
+    return with_prev.filter(
+        (F.col("valid_from") >= F.col("valid_to"))
+        | (F.col("_prev_end").isNotNull() & (F.col("_prev_end") != F.col("valid_from")))
+    )
+
+
+def contract_table_checks(silver_trips: DataFrame, contract: DataContract, today: date) -> list[Check]:
+    """Contract checks over the whole dataset: schema and freshness SLA."""
+    name = f"contract.{contract.dataset.rsplit('.', 1)[-1]}"
+    min_period = add_months(f"{today:%Y%m}", -contract.max_lag_months)
+
+    def latest_period() -> str | None:
+        return silver_trips.agg(F.max(contract.partitioned_by)).first()[0]
+
     return [
+        Check(f"{name}.schema", "trips", "contract_schema",
+              lambda: rules.schema_matches(silver_trips, {c.name: c.type for c in contract.columns})),
+        Check(f"{name}.freshness", "trips", "min_period",
+              lambda: rules.min_period(latest_period(), min_period), contract.freshness_severity),
+    ]  # fmt: skip
+
+
+def contract_period_checks(silver_trips: DataFrame, contract: DataContract, period: str) -> list[Check]:
+    """Contract checks per period: required columns, primary key, accepted values."""
+    name = f"contract.{contract.dataset.rsplit('.', 1)[-1]}"
+    rows = silver_trips.filter(F.col(contract.partitioned_by) == period)
+    checks = [
+        Check(f"{name}.required", "trips", "not_null", lambda: rules.not_null(rows, *contract.required), ERROR, period),
+        Check(f"{name}.primary_key", "trips", "unique", lambda: rules.unique(rows, *contract.primary_key), ERROR,
+              period),
+    ]  # fmt: skip
+    for column in (c for c in contract.columns if c.accepted_values):
+        checks.append(
+            Check(f"{name}.{column.name}", "trips", "accepted_values",
+                  lambda c=column: rules.accepted_values(rows, c.name, c.accepted_values), ERROR, period)
+        )  # fmt: skip
+    return checks
+
+
+def table_checks(t: Tables, *, latest_bronze_period: str | None, gold_built_at: datetime | None,
+                 today: date, now: datetime, contract: DataContract | None = None) -> list[Check]:  # fmt: skip
+    min_period = add_months(f"{today:%Y%m}", -MAX_SOURCE_LAG_MONTHS)
+    contract = contract or contracts.load()
+    return [
+        *contract_table_checks(t.silver_trips, contract, today),
         Check("dim_date.unique_date_key", "dim_date", "unique", lambda: rules.unique(t.dim_date, "date_key")),
-        Check("dim_station.unique_station_key", "dim_station", "unique",
-              lambda: rules.unique(t.dim_station, "station_key")),
+        # dim_station is SCD2: one row per version, exactly one current version per station, contiguous intervals
+        Check("dim_station.unique_version_key", "dim_station", "unique",
+              lambda: rules.unique(t.dim_station, "station_version_key")),
+        Check("dim_station.one_current_version", "dim_station", "unique",
+              lambda: rules.unique(_current(t.dim_station), "station_key")),
+        Check("dim_station.every_station_current", "dim_station", "foreign_key",
+              lambda: rules.foreign_key(t.dim_station, "station_key", _current(t.dim_station), "station_key")),
+        Check("dim_station.contiguous_versions", "dim_station", "scd2_intervals",
+              lambda: rules.no_rows(scd2_overlaps(t.dim_station), "station_id", "overlapping or gapped versions")),
         Check("dim_station.not_null", "dim_station", "not_null",
-              lambda: rules.not_null(t.dim_station, "station_key", "station_id", "station_name")),
+              lambda: rules.not_null(t.dim_station, "station_version_key", "station_key", "station_id", "station_name",
+                                     "valid_from", "valid_to", "is_current")),
         Check("dim_station.dockless_member", "dim_station", "row_count",
               lambda: rules.row_count(t.dim_station.filter(F.col("station_key") == DOCKLESS_STATION_KEY), 1)),
         Check("dim_weather.unique_date_key", "dim_weather", "unique", lambda: rules.unique(t.dim_weather, "date_key")),
@@ -82,9 +142,10 @@ def table_checks(t: Tables, *, latest_bronze_period: str | None, gold_built_at: 
     ]  # fmt: skip
 
 
-def period_checks(t: Tables, period: str) -> list[Check]:
+def period_checks(t: Tables, period: str, contract: DataContract | None = None) -> list[Check]:
     fact, silver, bronze = _p(t.fact_trips, period), _p(t.silver_trips, period), _p(t.bronze_trips, period)
     quarantine = _p(t.quarantine, period)
+    stations = _current(t.dim_station)
 
     def check(name: str, table: str, rule: str, measure, severity: str = ERROR) -> Check:
         return Check(name, table, rule, measure, severity, period)
@@ -104,9 +165,9 @@ def period_checks(t: Tables, period: str) -> list[Check]:
         check("fact_trips.fk_date", "fact_trips", "foreign_key",
               lambda: rules.foreign_key(fact, "date_key", t.dim_date, "date_key")),
         check("fact_trips.fk_start_station", "fact_trips", "foreign_key",
-              lambda: rules.foreign_key(fact, "start_station_key", t.dim_station, "station_key")),
+              lambda: rules.foreign_key(fact, "start_station_key", stations, "station_key")),
         check("fact_trips.fk_end_station", "fact_trips", "foreign_key",
-              lambda: rules.foreign_key(fact, "end_station_key", t.dim_station, "station_key")),
+              lambda: rules.foreign_key(fact, "end_station_key", stations, "station_key")),
         check("fact_trips.weather_coverage", "fact_trips", "foreign_key",
               lambda: rules.foreign_key(fact, "date_key", t.dim_weather, "date_key"), WARN),
         check("reconcile.bronze_to_silver", "trips", "reconcile",
@@ -117,6 +178,7 @@ def period_checks(t: Tables, period: str) -> list[Check]:
               lambda: rules.max_ratio(quarantine.count(), bronze.count(), QUARANTINE_WARN_RATE), WARN),
         check("silver.quarantine_rate_max", "trips_quarantine", "max_ratio",
               lambda: rules.max_ratio(quarantine.count(), bronze.count(), QUARANTINE_MAX_RATE)),
+        *contract_period_checks(t.silver_trips, contract or contracts.load(), period),
     ]  # fmt: skip
 
 

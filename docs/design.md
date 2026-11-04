@@ -47,7 +47,8 @@ takes about 1.5–2 minutes per month, including deduplication across the month.
 
 - **Partition per period.** Every write replaces one `_period` partition, so a run's cost depends on the months that
   changed, not on table size. Twelve more months add 12 partitions and no extra work per run.
-- **Dimensions** are small (about 2k stations, about 2k dates) and are rebuilt or merged in full.
+- **Dimensions** are small (about 2k stations, about 2k dates). `dim_date` and `dim_weather` are rebuilt in full.
+  `dim_station` is merged (SCD2), so it grows by one row per real rename or relocation, not per run.
 - **Aggregates** are rebuilt per trip month from at most two source files (Divvy's files overlap at month boundaries).
 
 ### What changes at 10× (about 60M trips a year, or about 9M per month)
@@ -107,8 +108,8 @@ weekly. The schedule and the daily monitor are paused since 2026-11-04 because t
 | Layer | Lakehouse | Contents | Contract | Owner |
 |---|---|---|---|---|
 | Bronze | `lh_bronze` | Raw Divvy trips (all strings) + raw files, Open-Meteo JSON, `ingestion_log` | Divvy header check (schema drift fails the period) | Platform / data engineering |
-| Silver | `lh_silver` | Typed, deduplicated `trips`, `trips_quarantine` with reason codes, `stations`, `weather_daily`, `processing_log` | Quality rules in `silver/trips.py` | Data engineering |
-| Gold | `lh_gold` | Star schema, aggregates, `dq_results`, `processing_log` | 45 data-quality checks per run, `error` checks fail the pipeline | Data engineering (consumers read Gold only) |
+| Silver | `lh_silver` | Typed, deduplicated `trips`, `trips_quarantine` with reason codes, `stations`, `weather_daily`, `processing_log` | Quality rules in `silver/trips.py` + data contract [`silver_trips.yml`](../src/divvy_medallion/contracts/silver_trips.yml) (schema, required columns, key, accepted values, owner, freshness SLA), enforced every run | Data engineering |
+| Gold | `lh_gold` | Star schema (`dim_station` with SCD2 history), aggregates, `dq_results`, `processing_log` | 58 data-quality checks for a two-month run (incl. SCD2 invariants), `error` checks fail the pipeline | Data engineering (consumers read Gold only) |
 
 ### Lineage
 
