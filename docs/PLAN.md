@@ -107,3 +107,10 @@
 - [x] Portfolio review follow-ups: ADRs 0001–0003, `docs/design.md`, `Makefile` + devcontainer, 12-month results and
       runtimes in the README (#18); `dim_station` SCD2 + `silver.trips` data contract enforced by the DQ gate,
       ADR 0004 (#19)
+
+## After completion
+
+- [x] 2026-11-02 weekly prod run failed: Divvy had not published `202610` yet (HTTP 404). Fixed in #16 — a 404 for
+      one of the last two complete months is logged `NOT_PUBLISHED` and retried; older months still fail
+- [x] 2026-11-04 automation paused (project complete): `monitor` runs on demand only, `prod_schedule_enabled = false`.
+      To resume: restore the monitor cron and apply Terraform with `prod_schedule_enabled = true`

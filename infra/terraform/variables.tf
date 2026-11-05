@@ -60,7 +60,7 @@ variable "environments" {
 }
 
 variable "prod_schedule_enabled" {
-  description = "Schedule pl_medallion in prod. The pipeline is created by the first deployment, so a fresh environment applies with false first, then true."
+  description = "Schedule pl_medallion in prod. The pipeline is created by the first deployment, so a fresh environment applies with false first, then true. Paused (false) since 2026-11-04: project complete."
   type        = bool
-  default     = true
+  default     = false
 }

@@ -2,9 +2,9 @@ name: monitor
 
 # Daily production health check (tools/monitor_prod.py): latest pl_medallion run + latest data-quality run.
 # fail -> open (or update) a `prod-alert` issue and fail this job; ok/warn -> close an open alert issue.
+# Paused 2026-11-04 (project complete): the daily schedule is off; run it on demand from the Actions tab.
+# To resume, restore:  schedule: [{cron: "0 14 * * *"}]  # 14:00 UTC daily
 on:
-  schedule:
-    - cron: "0 14 * * *" # 14:00 UTC daily (the weekly prod run is Monday 06:00 Chicago)
   workflow_dispatch:
 
 permissions:

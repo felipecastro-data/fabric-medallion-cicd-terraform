@@ -6,6 +6,9 @@
 [![monitor](https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/actions/workflows/monitor.yml/badge.svg)](https://github.com/felipecastro-data/fabric-medallion-cicd-terraform/actions/workflows/monitor.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+> **Status:** complete. The weekly prod schedule and the daily monitor are paused since 2026-11-04; everything
+> still runs on demand (`deploy`, `monitor` via *Run workflow*). See [docs/PLAN.md](docs/PLAN.md#after-completion).
+
 A production-grade data platform on **Microsoft Fabric**, built the way a platform team would run it: a
 bronze / silver / gold lakehouse on real Chicago **Divvy** bike-share trips enriched with **Open-Meteo** weather,
 **provisioned with Terraform**, **promoted dev → test → prod by GitHub Actions and Fabric deployment pipelines**, and
@@ -225,7 +228,7 @@ HCP Terraform organization. Then:
 2. Run the `terraform` workflow (apply with `prod_schedule_enabled = false` the first time) to create the workspaces,
    lakehouses and deployment pipeline.
 3. Connect the dev workspace to this repository's `fabric/` folder, then run the `deploy` workflow.
-4. Re-apply Terraform with `prod_schedule_enabled = true`.
+4. Re-apply Terraform with `prod_schedule_enabled = true` (the default is `false` while the project is paused).
 
 The working conventions for contributors (and AI assistants) are in [CLAUDE.md](CLAUDE.md) and
 [docs/development-workflow.md](docs/development-workflow.md).
